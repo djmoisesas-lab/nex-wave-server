@@ -1,8 +1,12 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import { getDb } from './db';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import authRoutes from './routes/auth';
 import trackRoutes from './routes/tracks';
 import commentRoutes from './routes/comments';
@@ -46,7 +50,7 @@ app.use('/api/auth/forgot-password', authLimiter);
 
 app.use(express.json({ limit: '10mb' }));
 
-app.use('/uploads', express.static(path.resolve(import.meta.dir!, '..', 'uploads'))); // legacy files only
+app.use('/uploads', express.static(path.resolve(__dirname, '..', 'uploads'))); // legacy files only
 
 app.use('/api/auth', authRoutes);
 app.use('/api/tracks', trackRoutes);
@@ -71,7 +75,7 @@ app.get('/api/genres', (_req, res) => {
 });
 
 if (isProd) {
-  const clientDist = path.resolve(import.meta.dir!, '..', '..', 'client', 'dist');
+  const clientDist = path.resolve(__dirname, '..', '..', 'client', 'dist');
   app.use(express.static(clientDist));
   app.get('*', (_req, res) => {
     res.sendFile(path.join(clientDist, 'index.html'));

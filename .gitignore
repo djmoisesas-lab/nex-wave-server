@@ -6,4 +6,6 @@ waveforms/*
 !waveforms/.gitkeep
 .env
 *.db
+*.db-shm
+*.db-wal
 firebase-key.json
