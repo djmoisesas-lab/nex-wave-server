@@ -9,3 +9,4 @@ waveforms/*
 *.db-shm
 *.db-wal
 firebase-key.json
+package-lock.json
