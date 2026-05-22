@@ -2,6 +2,16 @@ import admin from 'firebase-admin';
 
 const BUCKET_NAME = process.env.FIREBASE_STORAGE_BUCKET || 'dj-catalog-web.firebasestorage.app';
 
+function parsePrivateKey(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  let key = raw.trim();
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1);
+  }
+  key = key.replace(/\\n/g, '\n');
+  return key;
+}
+
 function getCert() {
   const keyPath = process.env.FIREBASE_KEY_PATH;
   if (keyPath) {
@@ -9,7 +19,7 @@ function getCert() {
   }
   return {
     projectId: process.env.FIREBASE_PROJECT_ID,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    privateKey: parsePrivateKey(process.env.FIREBASE_PRIVATE_KEY),
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
   };
 }
