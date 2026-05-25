@@ -21,13 +21,11 @@ const isProd = process.env.NODE_ENV === 'production';
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
-  : isProd
-    ? [process.env.DOMAIN || 'https://tudominio.com']
-    : ['http://localhost:5173', 'http://localhost:4173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:4173', 'http://127.0.0.1:5174'];
+  : null;
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || !allowedOrigins || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
