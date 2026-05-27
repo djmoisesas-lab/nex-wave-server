@@ -2,8 +2,30 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db';
 import { authMiddleware } from '../middleware/auth';
+import { addClient, sendToUser } from '../services/sse';
 
 const router = Router();
+
+router.get('/stream', (req: Request, res: Response) => {
+  const token = req.query.token as string;
+  if (!token) return res.status(401).json({ error: 'Token required' });
+  try {
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || 'dev-secret';
+    const payload = jwt.verify(token, secret) as { userId: string };
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    res.write('event: connected\ndata: {}\n\n');
+    addClient(payload.userId, res);
+    const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 30000);
+    req.on('close', () => clearInterval(heartbeat));
+  } catch {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
 
 router.get('/', authMiddleware, (req: Request, res: Response) => {
   const db = getDb();
@@ -54,4 +76,13 @@ export function createNotification(
   db.query(
     'INSERT INTO notifications (id, user_id, type, message, track_id, actor_id) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, userId, type, message, trackId, actorId);
+  const notification = db.query(`
+    SELECT n.*, u.username as actor_username, u.display_name as actor_display_name,
+      u.avatar_url as actor_avatar_url, t.title as track_title
+    FROM notifications n
+    LEFT JOIN users u ON u.id = n.actor_id
+    LEFT JOIN tracks t ON t.id = n.track_id
+    WHERE n.id = ?
+  `).get(id) as any;
+  sendToUser(userId, 'notification', notification);
 }
