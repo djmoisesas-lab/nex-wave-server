@@ -588,7 +588,7 @@ router.get('/:id/download', optionalAuth, async (req: Request, res: Response) =>
     const [url] = await bucket.file(track.filename).getSignedUrl({
       action: 'read',
       expires: Date.now() + 3600 * 1000,
-      responseDisposition: `attachment; filename="${track.original_name}"`,
+      responseDisposition: `attachment; filename="${track.title}${path.extname(track.original_name) || ''}"`,
     });
     res.redirect(url);
   } catch {
