@@ -29,13 +29,15 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
 
     const popularTracks = db.query(`
       SELECT t.*, u.username, u.display_name,
-        (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count
+        (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
+        (SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0 as is_liked
       FROM tracks t
       JOIN users u ON u.id = t.user_id
       WHERE t.is_public = 1 AND t.user_id != ?
+        AND t.id NOT IN (SELECT track_id FROM likes WHERE user_id = ?)
       ORDER BY t.plays DESC
       LIMIT 4
-    `).all(userId) as any[];
+    `).all(userId, userId, userId) as any[];
 
     return res.json({ users: popularUsers, tracks: popularTracks });
   }
@@ -57,16 +59,18 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
 
   const suggestedTracks = db.query(`
     SELECT t.*, u.username, u.display_name,
-      (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count
+      (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
+      (SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0 as is_liked
     FROM tracks t
     JOIN users u ON u.id = t.user_id
     WHERE t.genre IN (${placeholders})
       AND t.is_public = 1
       AND t.user_id != ?
       AND t.id NOT IN (SELECT track_id FROM play_history WHERE user_id = ?)
+      AND t.id NOT IN (SELECT track_id FROM likes WHERE user_id = ?)
     ORDER BY t.plays DESC
     LIMIT 4
-  `).all(...genres, userId, userId) as any[];
+  `).all(userId, ...genres, userId, userId, userId) as any[];
 
   res.json({ users: suggestedUsers, tracks: suggestedTracks });
 });

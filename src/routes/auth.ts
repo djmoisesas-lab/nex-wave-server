@@ -77,7 +77,7 @@ router.get('/me', (req: Request, res: Response) => {
     const decoded = jwt.verify(header.slice(7), getJwtSecret()) as AuthPayload;
     const db = getDb();
     const user = db.query(
-      'SELECT id, username, display_name, email, bio, avatar_url, banner_url, social_instagram, social_soundcloud, social_mixcloud, is_public FROM users WHERE id = ?'
+      'SELECT id, username, display_name, email, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook, is_public FROM users WHERE id = ?'
     ).get(decoded.userId) as any;
 
     if (!user) return res.status(404).json({ error: 'User not found' });

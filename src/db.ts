@@ -29,6 +29,8 @@ function initSchema() {
       social_instagram TEXT,
       social_soundcloud TEXT,
       social_mixcloud TEXT,
+      social_tiktok TEXT DEFAULT '',
+      social_facebook TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       is_public INTEGER DEFAULT 0
     );
@@ -196,4 +198,6 @@ function initSchema() {
   try { db.run('ALTER TABLE tracks ADD COLUMN cover_url TEXT'); } catch {}
   try { db.run('ALTER TABLE comments ADD COLUMN parent_id TEXT REFERENCES comments(id) ON DELETE CASCADE'); } catch {}
   try { db.run('ALTER TABLE follows ADD COLUMN notify_on_upload INTEGER DEFAULT 0'); } catch {}
+  try { db.run('ALTER TABLE users ADD COLUMN social_tiktok TEXT DEFAULT \'\''); } catch {}
+  try { db.run('ALTER TABLE users ADD COLUMN social_facebook TEXT DEFAULT \'\''); } catch {}
 }

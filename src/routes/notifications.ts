@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuid } from 'uuid';
+import jwt from 'jsonwebtoken';
 import { getDb } from '../db';
 import { authMiddleware } from '../middleware/auth';
+import { getJwtSecret } from '../auth';
 import { addClient, sendToUser } from '../services/sse';
 
 const router = Router();
@@ -10,9 +12,7 @@ router.get('/stream', (req: Request, res: Response) => {
   const token = req.query.token as string;
   if (!token) return res.status(401).json({ error: 'Token required' });
   try {
-    const jwt = require('jsonwebtoken');
-    const secret = process.env.JWT_SECRET || 'dev-secret';
-    const payload = jwt.verify(token, secret) as { userId: string };
+    const payload = jwt.verify(token, getJwtSecret()) as { userId: string };
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',

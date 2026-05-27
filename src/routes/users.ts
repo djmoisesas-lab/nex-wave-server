@@ -101,7 +101,7 @@ router.get('/check-follow/:id', authMiddleware, (req: Request, res: Response) =>
 router.get('/:id', (req: Request, res: Response) => {
   const db = getDb();
   const user = db.query(`
-    SELECT id, username, display_name, bio, avatar_url, banner_url, social_instagram, social_soundcloud, social_mixcloud,
+    SELECT id, username, display_name, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook,
       (SELECT COUNT(*) FROM follows WHERE following_id = users.id) as followers_count,
       (SELECT COUNT(*) FROM follows WHERE follower_id = users.id) as following_count
     FROM users WHERE id = ?
@@ -152,7 +152,7 @@ router.get('/:id/recent-plays', (req: Request, res: Response) => {
 });
 
 router.put('/profile', authMiddleware, (req: Request, res: Response) => {
-  const { displayName, bio, socialInstagram, socialSoundcloud, socialMixcloud, isPublic } = req.body;
+  const { displayName, bio, socialInstagram, socialTiktok, socialFacebook, isPublic } = req.body;
   const db = getDb();
 
   db.query(`
@@ -160,18 +160,18 @@ router.put('/profile', authMiddleware, (req: Request, res: Response) => {
       display_name = COALESCE(?, display_name),
       bio = COALESCE(?, bio),
       social_instagram = COALESCE(?, social_instagram),
-      social_soundcloud = COALESCE(?, social_soundcloud),
-      social_mixcloud = COALESCE(?, social_mixcloud),
+      social_tiktok = COALESCE(?, social_tiktok),
+      social_facebook = COALESCE(?, social_facebook),
       is_public = COALESCE(?, is_public)
     WHERE id = ?
   `).run(
     displayName || null, bio || null,
-    socialInstagram || null, socialSoundcloud || null, socialMixcloud || null,
+    socialInstagram || null, socialTiktok || null, socialFacebook || null,
     isPublic !== undefined ? (isPublic ? 1 : 0) : null,
     req.user!.userId
   );
 
-  const updated = db.query('SELECT id, username, display_name, bio, avatar_url, banner_url, social_instagram, social_soundcloud, social_mixcloud, is_public FROM users WHERE id = ?').get(req.user!.userId);
+  const updated = db.query('SELECT id, username, display_name, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook, is_public FROM users WHERE id = ?').get(req.user!.userId);
   res.json(updated);
 });
 
