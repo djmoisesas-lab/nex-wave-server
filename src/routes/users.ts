@@ -9,6 +9,14 @@ import { uploadToFirebase, isValidImage } from '../services/firebase';
 
 const router = Router();
 
+router.get('/', (req: Request, res: Response) => {
+  const db = getDb();
+  const users = db.query(
+    'SELECT id, username, display_name, email, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook, is_public, created_at FROM users ORDER BY created_at DESC'
+  ).all();
+  res.json(users);
+});
+
 const IMAGE_MEMORY_UPLOAD = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
