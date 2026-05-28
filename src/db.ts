@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import path from 'path';
+import fs from 'fs';
 
 const DB_PATH = process.env.DATABASE_PATH || path.join(import.meta.dir!, '..', 'data.db');
 
@@ -7,6 +8,10 @@ let db: Database;
 
 export function getDb(): Database {
   if (!db) {
+    const dir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     db = new Database(DB_PATH);
     db.run('PRAGMA journal_mode = WAL');
     db.run('PRAGMA foreign_keys = ON');
