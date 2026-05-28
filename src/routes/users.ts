@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db';
 import { authMiddleware } from '../middleware/auth';
@@ -15,6 +16,18 @@ router.get('/', (req: Request, res: Response) => {
     'SELECT id, username, display_name, email, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook, is_public, created_at FROM users ORDER BY created_at DESC'
   ).all();
   res.json(users);
+});
+
+router.get('/db-check', (_req: Request, res: Response) => {
+  const db = getDb();
+  const userCount = (db.query('SELECT COUNT(*) as count FROM users').get() as any).count;
+  const users = db.query('SELECT username, email, created_at FROM users').all();
+  res.json({
+    databasePath: process.env.DATABASE_PATH || '(not set, using default)',
+    fileExists: fs.existsSync(process.env.DATABASE_PATH || ''),
+    userCount,
+    users,
+  });
 });
 
 const IMAGE_MEMORY_UPLOAD = multer({
