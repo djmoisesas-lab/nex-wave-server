@@ -1,27 +1,61 @@
-import { Database } from 'bun:sqlite';
+import { Pool } from 'pg';
 import path from 'path';
-import fs from 'fs';
 
-const DB_PATH = process.env.DATABASE_PATH || path.join(import.meta.dir!, '..', 'data.db');
+const DATABASE_URL = process.env.DATABASE_URL;
 
-let db: Database;
+let pool: Pool;
 
-export function getDb(): Database {
-  if (!db) {
-    const dir = path.dirname(DB_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+function getPool(): Pool {
+  if (!pool) {
+    if (!DATABASE_URL) {
+      throw new Error('DATABASE_URL environment variable is required');
     }
-    db = new Database(DB_PATH);
-    db.run('PRAGMA journal_mode = WAL');
-    db.run('PRAGMA foreign_keys = ON');
+    pool = new Pool({ connectionString: DATABASE_URL, parseInt8: true });
     initSchema();
   }
-  return db;
+  return pool;
+}
+
+function prepare(sql: string, params: any[]): { text: string; values: any[] } {
+  let i = 0;
+  const text = sql
+    .replace(/\?/g, () => `$${++i}`)
+    .replace(/datetime\('now',\s*'([^']+)'\)/g, (_, interval) => {
+      const neg = interval.startsWith('-');
+      return `NOW() ${neg ? '-' : '+'} INTERVAL '${interval.replace(/^[+-]/, '')}'`;
+    })
+    .replace(/datetime\('now'\)/g, 'NOW()')
+    .replace(/INSERT OR IGNORE/g, 'INSERT ON CONFLICT DO NOTHING');
+  return { text, values: params };
+}
+
+export function getDb() {
+  const pool = getPool();
+  return {
+    query(sql: string) {
+      return {
+        get: async (...params: any[]) => {
+          const { text, values } = prepare(sql, params);
+          const result = await pool.query(text, values);
+          return result.rows[0] || null;
+        },
+        all: async (...params: any[]) => {
+          const { text, values } = prepare(sql, params);
+          const result = await pool.query(text, values);
+          return result.rows;
+        },
+        run: async (...params: any[]) => {
+          const { text, values } = prepare(sql, params);
+          const result = await pool.query(text, values);
+          return { changes: result.rowCount ?? 0 };
+        },
+      };
+    },
+  };
 }
 
 function initSchema() {
-  db.run(`
+  pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
@@ -36,7 +70,7 @@ function initSchema() {
       social_mixcloud TEXT,
       social_tiktok TEXT DEFAULT '',
       social_facebook TEXT DEFAULT '',
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       is_public INTEGER DEFAULT 0
     );
 
@@ -59,7 +93,7 @@ function initSchema() {
       plays INTEGER DEFAULT 0,
       downloads INTEGER DEFAULT 0,
       is_public INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
@@ -70,7 +104,7 @@ function initSchema() {
       description TEXT DEFAULT '',
       cover_url TEXT,
       is_public INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
@@ -78,7 +112,7 @@ function initSchema() {
       playlist_id TEXT NOT NULL,
       track_id TEXT NOT NULL,
       position INTEGER NOT NULL DEFAULT 0,
-      added_at TEXT DEFAULT (datetime('now')),
+      added_at TIMESTAMP DEFAULT NOW(),
       PRIMARY KEY (playlist_id, track_id),
       FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
       FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
@@ -87,7 +121,7 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS likes (
       user_id TEXT NOT NULL,
       track_id TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       PRIMARY KEY (user_id, track_id),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
@@ -98,7 +132,7 @@ function initSchema() {
       track_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       content TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
@@ -106,7 +140,8 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS follows (
       follower_id TEXT NOT NULL,
       following_id TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
+      notify_on_upload INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT NOW(),
       PRIMARY KEY (follower_id, following_id),
       FOREIGN KEY (follower_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (following_id) REFERENCES users(id) ON DELETE CASCADE
@@ -127,7 +162,7 @@ function initSchema() {
       track_id TEXT,
       actor_id TEXT NOT NULL,
       read INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE
     );
@@ -140,7 +175,7 @@ function initSchema() {
       track_id TEXT NOT NULL,
       user_id TEXT,
       ip TEXT DEFAULT '',
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
     );
@@ -152,7 +187,7 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS comment_likes (
       user_id TEXT NOT NULL,
       comment_id TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       PRIMARY KEY (user_id, comment_id),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
@@ -164,9 +199,9 @@ function initSchema() {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       token TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
       used INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
@@ -176,7 +211,7 @@ function initSchema() {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       track_id TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
     );
@@ -191,18 +226,13 @@ function initSchema() {
       reason TEXT NOT NULL,
       description TEXT DEFAULT '',
       resolved INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_reports_track ON reports(track_id);
-
-  `);
-  try { db.run('ALTER TABLE users ADD COLUMN banner_url TEXT'); } catch {}
-  try { db.run('ALTER TABLE tracks ADD COLUMN cover_url TEXT'); } catch {}
-  try { db.run('ALTER TABLE comments ADD COLUMN parent_id TEXT REFERENCES comments(id) ON DELETE CASCADE'); } catch {}
-  try { db.run('ALTER TABLE follows ADD COLUMN notify_on_upload INTEGER DEFAULT 0'); } catch {}
-  try { db.run('ALTER TABLE users ADD COLUMN social_tiktok TEXT DEFAULT \'\''); } catch {}
-  try { db.run('ALTER TABLE users ADD COLUMN social_facebook TEXT DEFAULT \'\''); } catch {}
+  `).catch((err) => {
+    console.error('Schema initialization error:', err);
+  });
 }

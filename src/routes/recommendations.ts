@@ -4,11 +4,11 @@ import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
 
-router.get('/', authMiddleware, (req: Request, res: Response) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
   const userId = req.user!.userId;
 
-  const userGenres = db.query(`
+  const userGenres = await db.query(`
     SELECT DISTINCT t.genre FROM play_history ph
     JOIN tracks t ON t.id = ph.track_id
     WHERE ph.user_id = ? AND t.genre != '' AND t.genre IS NOT NULL
@@ -17,7 +17,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   const genres = userGenres.map(g => g.genre);
 
   if (genres.length === 0) {
-    const popularUsers = db.query(`
+    const popularUsers = await db.query(`
       SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio,
         (SELECT COUNT(*) FROM tracks WHERE user_id = u.id) as track_count,
         (SELECT COUNT(*) FROM follows WHERE following_id = u.id) as followers_count
@@ -27,7 +27,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
       LIMIT 4
     `).all(userId) as any[];
 
-    const popularTracks = db.query(`
+    const popularTracks = await db.query(`
       SELECT t.*, u.username, u.display_name,
         (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
         (SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0 as is_liked
@@ -44,7 +44,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
 
   const placeholders = genres.map(() => '?').join(',');
 
-  const suggestedUsers = db.query(`
+  const suggestedUsers = await db.query(`
     SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio,
       (SELECT COUNT(*) FROM tracks WHERE user_id = u.id) as track_count,
       (SELECT COUNT(*) FROM follows WHERE following_id = u.id) as followers_count,
@@ -57,7 +57,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
     LIMIT 4
   `).all(...genres, userId, userId, ...genres) as any[];
 
-  const suggestedTracks = db.query(`
+  const suggestedTracks = await db.query(`
     SELECT t.*, u.username, u.display_name,
       (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
       (SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0 as is_liked

@@ -1,3 +1,4 @@
+import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -58,9 +59,9 @@ app.use('/api/users', userRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 
-app.get('/api/genres', (_req, res) => {
+app.get('/api/genres', async (_req, res) => {
   const db = getDb();
-  const rows = db.query(
+  const rows = await db.query(
     "SELECT DISTINCT genre FROM tracks WHERE genre != '' AND genre IS NOT NULL ORDER BY genre ASC"
   ).all() as { genre: string }[];
   const dbGenres = rows.map(r => r.genre);

@@ -12,7 +12,7 @@ const createCommentSchema = z.object({
 
 const router = Router();
 
-router.get('/:trackId/comments', optionalAuth, (req: Request, res: Response) => {
+router.get('/:trackId/comments', optionalAuth, async (req: Request, res: Response) => {
   const { trackId } = req.params;
   const db = getDb();
 
@@ -23,7 +23,7 @@ router.get('/:trackId/comments', optionalAuth, (req: Request, res: Response) => 
   if (req.user) params.push(req.user.userId);
   params.push(trackId);
 
-  const comments = db.query(
+  const comments = await db.query(
     `SELECT c.id, c.track_id, c.user_id, c.content, c.parent_id, c.created_at,
             u.username, u.display_name, u.avatar_url,
             (SELECT COUNT(*) FROM comment_likes WHERE comment_id = c.id) as likes_count,
@@ -37,7 +37,7 @@ router.get('/:trackId/comments', optionalAuth, (req: Request, res: Response) => 
   res.json(comments);
 });
 
-router.post('/:trackId/comments', authMiddleware, (req: Request, res: Response) => {
+router.post('/:trackId/comments', authMiddleware, async (req: Request, res: Response) => {
   const parsed = createCommentSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.errors[0].message });
@@ -49,14 +49,14 @@ router.post('/:trackId/comments', authMiddleware, (req: Request, res: Response) 
   const db = getDb();
   const userId = req.user!.userId;
 
-  const track = db.query('SELECT id, user_id, title FROM tracks WHERE id = ?').get(trackId) as any;
+  const track = await db.query('SELECT id, user_id, title FROM tracks WHERE id = ?').get(trackId) as any;
   if (!track) {
     res.status(404).json({ error: 'Track no encontrado' });
     return;
   }
 
   if (parentId) {
-    const parent = db.query('SELECT id, user_id FROM comments WHERE id = ? AND track_id = ?').get(parentId, trackId) as any;
+    const parent = await db.query('SELECT id, user_id FROM comments WHERE id = ? AND track_id = ?').get(parentId, trackId) as any;
     if (!parent) {
       res.status(404).json({ error: 'Comentario padre no encontrado' });
       return;
@@ -65,16 +65,15 @@ router.post('/:trackId/comments', authMiddleware, (req: Request, res: Response) 
 
   const id = uuid();
 
-  db.run(
-    'INSERT INTO comments (id, track_id, user_id, content, parent_id) VALUES (?, ?, ?, ?, ?)',
-    [id, trackId, userId, content, parentId || null]
-  );
+  await db.query(
+    'INSERT INTO comments (id, track_id, user_id, content, parent_id) VALUES (?, ?, ?, ?, ?)'
+  ).run(id, trackId, userId, content, parentId || null);
 
   const mentionedUsers = new Set<string>();
   const mentionRegex = /@(\w+)/g;
   let match;
   while ((match = mentionRegex.exec(content)) !== null) {
-    const mentioned = db.query('SELECT id FROM users WHERE username = ?').get(match[1]) as any;
+    const mentioned = await db.query('SELECT id FROM users WHERE username = ?').get(match[1]) as any;
     if (mentioned && mentioned.id !== userId && !mentionedUsers.has(mentioned.id)) {
       mentionedUsers.add(mentioned.id);
       createNotification(
@@ -88,7 +87,7 @@ router.post('/:trackId/comments', authMiddleware, (req: Request, res: Response) 
   }
 
   if (parentId) {
-    const parent = db.query('SELECT user_id FROM comments WHERE id = ?').get(parentId) as any;
+    const parent = await db.query('SELECT user_id FROM comments WHERE id = ?').get(parentId) as any;
     if (parent && parent.user_id !== userId) {
       createNotification(
         parent.user_id,
@@ -108,7 +107,7 @@ router.post('/:trackId/comments', authMiddleware, (req: Request, res: Response) 
     );
   }
 
-  const comment = db.query(
+  const comment = await db.query(
     `SELECT c.id, c.track_id, c.user_id, c.content, c.parent_id, c.created_at,
             u.username, u.display_name, u.avatar_url,
             0 as likes_count, 0 as is_liked
@@ -120,12 +119,12 @@ router.post('/:trackId/comments', authMiddleware, (req: Request, res: Response) 
   res.status(201).json(comment);
 });
 
-router.delete('/:trackId/comments/:commentId', authMiddleware, (req: Request, res: Response) => {
+router.delete('/:trackId/comments/:commentId', authMiddleware, async (req: Request, res: Response) => {
   const { commentId } = req.params;
   const db = getDb();
   const userId = req.user!.userId;
 
-  const comment = db.query('SELECT * FROM comments WHERE id = ?').get(commentId) as any;
+  const comment = await db.query('SELECT * FROM comments WHERE id = ?').get(commentId) as any;
   if (!comment) {
     res.status(404).json({ error: 'Comentario no encontrado' });
     return;
@@ -136,20 +135,20 @@ router.delete('/:trackId/comments/:commentId', authMiddleware, (req: Request, re
     return;
   }
 
-  db.query('DELETE FROM comments WHERE id = ? OR parent_id = ?').run(commentId, commentId);
+  await db.query('DELETE FROM comments WHERE id = ? OR parent_id = ?').run(commentId, commentId);
   res.json({ success: true });
 });
 
-router.post('/:trackId/comments/:commentId/like', authMiddleware, (req: Request, res: Response) => {
+router.post('/:trackId/comments/:commentId/like', authMiddleware, async (req: Request, res: Response) => {
   const { commentId } = req.params;
   const db = getDb();
   const userId = req.user!.userId;
 
-  const comment = db.query('SELECT id, user_id FROM comments WHERE id = ?').get(commentId) as any;
+  const comment = await db.query('SELECT id, user_id FROM comments WHERE id = ?').get(commentId) as any;
   if (!comment) return res.status(404).json({ error: 'Comentario no encontrado' });
 
-  db.query('INSERT OR IGNORE INTO comment_likes (user_id, comment_id) VALUES (?, ?)').run(userId, commentId);
-  const count = db.query('SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?').get(commentId) as any;
+  await db.query('INSERT OR IGNORE INTO comment_likes (user_id, comment_id) VALUES (?, ?)').run(userId, commentId);
+  const count = await db.query('SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?').get(commentId) as any;
 
   if (comment.user_id !== userId) {
     createNotification(
@@ -164,11 +163,11 @@ router.post('/:trackId/comments/:commentId/like', authMiddleware, (req: Request,
   res.json({ liked: true, likes_count: count.count });
 });
 
-router.post('/:trackId/comments/:commentId/unlike', authMiddleware, (req: Request, res: Response) => {
+router.post('/:trackId/comments/:commentId/unlike', authMiddleware, async (req: Request, res: Response) => {
   const { commentId } = req.params;
   const db = getDb();
-  db.query('DELETE FROM comment_likes WHERE user_id = ? AND comment_id = ?').run(req.user!.userId, commentId);
-  const count = db.query('SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?').get(commentId) as any;
+  await db.query('DELETE FROM comment_likes WHERE user_id = ? AND comment_id = ?').run(req.user!.userId, commentId);
+  const count = await db.query('SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?').get(commentId) as any;
   res.json({ liked: false, likes_count: count.count });
 });
 

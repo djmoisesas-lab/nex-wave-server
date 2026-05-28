@@ -13,11 +13,13 @@
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "express-async-errors": "^3.1.1",
     "express-rate-limit": "^8.5.2",
     "firebase-admin": "^13.10.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^8.0.7",
+    "pg": "^8.21.0",
     "uuid": "^10.0.0",
     "zod": "^4.4.3"
   },
@@ -28,6 +30,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/multer": "^1.4.12",
     "@types/nodemailer": "^8.0.0",
+    "@types/pg": "^8.20.0",
     "@types/uuid": "^10.0.0"
   }
 }

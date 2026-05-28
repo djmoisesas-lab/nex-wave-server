@@ -165,7 +165,7 @@ const coverUpload = multer({
   },
 });
 
-router.get('/', optionalAuth, (req: Request, res: Response) => {
+router.get('/', optionalAuth, async (req: Request, res: Response) => {
   const db = getDb();
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
@@ -189,7 +189,7 @@ router.get('/', optionalAuth, (req: Request, res: Response) => {
     params.push(genre);
   }
   if (search) {
-    query += ' AND (t.title LIKE ? OR t.artist LIKE ?)';
+    query += ' AND (t.title ILIKE ? OR t.artist ILIKE ?)';
     params.push(`%${search}%`, `%${search}%`);
   }
 
@@ -202,32 +202,32 @@ router.get('/', optionalAuth, (req: Request, res: Response) => {
   query += ' ORDER BY ' + (sortMap[sort] || 't.created_at DESC') + ' LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
-  const tracks = db.query(query).all(...params);
-  const total = db.query(
+  const tracks = await db.query(query).all(...params);
+  const total = await db.query(
     'SELECT COUNT(*) as count FROM tracks WHERE is_public = 1'
   ).get() as any;
 
   res.json({ tracks, total: total.count, page, limit });
 });
 
-router.get('/my', authMiddleware, (req: Request, res: Response) => {
+router.get('/my', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = (page - 1) * limit;
-  const tracks = db.query(`
+  const tracks = await db.query(`
     SELECT t.*,
       (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
       (SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0 as is_liked
     FROM tracks t WHERE t.user_id = ? ORDER BY t.created_at DESC LIMIT ? OFFSET ?
   `).all(req.user!.userId, req.user!.userId, limit, offset);
-  const total = db.query(
+  const total = await db.query(
     'SELECT COUNT(*) as count FROM tracks WHERE user_id = ?'
   ).get(req.user!.userId) as any;
   res.json({ tracks, total: total.count, page, limit });
 });
 
-router.get('/:id', optionalAuth, (req: Request, res: Response) => {
+router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
   const db = getDb();
   const isLikedSub = req.user
     ? `(SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0`
@@ -235,7 +235,7 @@ router.get('/:id', optionalAuth, (req: Request, res: Response) => {
   const params: any[] = [];
   if (req.user) params.push(req.user.userId);
   params.push(req.params.id);
-  const track = db.query(`
+  const track = await db.query(`
     SELECT t.*, u.username, u.display_name,
       (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
       ${isLikedSub} as is_liked
@@ -250,9 +250,9 @@ router.get('/:id', optionalAuth, (req: Request, res: Response) => {
   res.json(track);
 });
 
-router.post('/:id/play', optionalAuth, (req: Request, res: Response) => {
+router.post('/:id/play', optionalAuth, async (req: Request, res: Response) => {
   const db = getDb();
-  const track = db.query('SELECT id, user_id, is_public FROM tracks WHERE id = ?').get(req.params.id) as any;
+  const track = await db.query('SELECT id, user_id, is_public FROM tracks WHERE id = ?').get(req.params.id) as any;
   if (!track) return res.status(404).json({ error: 'Track not found' });
   if (!track.is_public && (!req.user || req.user.userId !== track.user_id)) {
     return res.status(404).json({ error: 'Track not found' });
@@ -261,51 +261,51 @@ router.post('/:id/play', optionalAuth, (req: Request, res: Response) => {
   let shouldCount = false;
 
   if (req.user) {
-    const existing = db.query(
+    const existing = await db.query(
       'SELECT id FROM track_plays WHERE track_id = ? AND user_id = ?'
     ).get(req.params.id, req.user.userId);
     if (!existing) shouldCount = true;
   } else {
     const ip = req.ip || req.socket.remoteAddress || '';
-    const recent = db.query(
-      "SELECT id FROM track_plays WHERE track_id = ? AND ip = ? AND created_at > datetime('now', '-1 day')"
+    const recent = await db.query(
+      "SELECT id FROM track_plays WHERE track_id = ? AND ip = ? AND created_at > NOW() - INTERVAL '1 day'"
     ).get(req.params.id, ip);
     if (!recent) shouldCount = true;
   }
 
   if (shouldCount) {
-    db.query('UPDATE tracks SET plays = plays + 1 WHERE id = ?').run(req.params.id);
-    db.query(
+    await db.query('UPDATE tracks SET plays = plays + 1 WHERE id = ?').run(req.params.id);
+    await db.query(
       'INSERT INTO track_plays (id, track_id, user_id, ip) VALUES (?, ?, ?, ?)'
     ).run(uuid(), req.params.id, req.user?.userId || null, req.ip || req.socket.remoteAddress || '');
     if (req.user) {
-      db.query(
+      await db.query(
         'INSERT INTO play_history (id, user_id, track_id) VALUES (?, ?, ?)'
       ).run(uuid(), req.user.userId, req.params.id);
     }
   }
 
-  const updated = db.query('SELECT plays FROM tracks WHERE id = ?').get(req.params.id) as any;
+  const updated = await db.query('SELECT plays FROM tracks WHERE id = ?').get(req.params.id) as any;
   res.json({ plays: updated.plays });
 });
 
 
 
-router.post('/:id/report', optionalAuth, (req: Request, res: Response) => {
+router.post('/:id/report', optionalAuth, async (req: Request, res: Response) => {
   const { reason, description } = req.body;
   if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
     return res.status(400).json({ error: 'Motivo requerido' });
   }
   const db = getDb();
-  const track = db.query('SELECT id FROM tracks WHERE id = ?').get(req.params.id) as any;
+  const track = await db.query('SELECT id FROM tracks WHERE id = ?').get(req.params.id) as any;
   if (!track) return res.status(404).json({ error: 'Track not found' });
-  db.query(
+  await db.query(
     'INSERT INTO reports (id, track_id, user_id, reason, description) VALUES (?, ?, ?, ?, ?)'
   ).run(uuid(), req.params.id, req.user?.userId || null, reason.trim(), (description || '').trim());
   res.json({ success: true, message: 'Reporte enviado. Gracias por ayudar a mantener la comunidad.' });
 });
 
-router.post('/', authMiddleware, (req: Request, res: Response) => {
+router.post('/', authMiddleware, async (req: Request, res: Response) => {
   if (activeUploads >= MAX_CONCURRENT_UPLOADS) {
     return res.status(429).json({ error: 'Demasiadas subidas concurrentes. Intentá de nuevo en unos minutos.' });
   }
@@ -357,7 +357,7 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
 
     const db = getDb();
     const id = uuid();
-    const user = db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
+    const user = await db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
 
     let waveformJson: string | null = null;
     try {
@@ -391,12 +391,12 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
       is_public: 1,
     };
 
-    db.query(`
+    await db.query(`
       INSERT INTO tracks (id, user_id, title, artist, genre, bpm, musical_key, description, filename, original_name, mime_type, file_size, duration, cover_url, is_public, waveform_data)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, req.user!.userId, title, track.artist, track.genre, track.bpm, track.musical_key, track.description, track.filename, track.original_name, track.mime_type, track.file_size, track.duration, track.cover_url, track.is_public, waveformJson);
 
-    const followers = db.query(`
+    const followers = await db.query(`
       SELECT follower_id FROM follows WHERE following_id = ? AND notify_on_upload = 1
     `).all(req.user!.userId) as { follower_id: string }[];
     for (const f of followers) {
@@ -408,19 +408,19 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
   });
 });
 
-router.put('/:id', authMiddleware, (req: Request, res: Response) => {
+router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
   const parsed = updateTrackSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.errors.map(e => e.message).join(', ') });
   }
 
   const db = getDb();
-  const existing = db.query('SELECT * FROM tracks WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
+  const existing = await db.query('SELECT * FROM tracks WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
 
   if (!existing) return res.status(404).json({ error: 'Track not found' });
 
   const { title, artist, genre, bpm, musicalKey, description, isPublic, cover_url } = parsed.data;
-  db.query(`
+  await db.query(`
     UPDATE tracks SET title = COALESCE(?, title), artist = COALESCE(?, artist), genre = COALESCE(?, genre),
     bpm = COALESCE(?, bpm), musical_key = COALESCE(?, musical_key), description = COALESCE(?, description),
     is_public = COALESCE(?, is_public), cover_url = COALESCE(?, cover_url) WHERE id = ?
@@ -432,13 +432,13 @@ router.put('/:id', authMiddleware, (req: Request, res: Response) => {
     req.params.id
   );
 
-  const updated = db.query('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
+  const updated = await db.query('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
   res.json(updated);
 });
 
-router.post('/:id/cover', authMiddleware, (req: Request, res: Response) => {
+router.post('/:id/cover', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const track = db.query('SELECT t.*, u.username FROM tracks t JOIN users u ON t.user_id = u.id WHERE t.id = ? AND t.user_id = ?').get(req.params.id, req.user!.userId) as any;
+  const track = await db.query('SELECT t.*, u.username FROM tracks t JOIN users u ON t.user_id = u.id WHERE t.id = ? AND t.user_id = ?').get(req.params.id, req.user!.userId) as any;
 
   if (!track) return res.status(404).json({ error: 'Track not found' });
 
@@ -465,7 +465,7 @@ router.post('/:id/cover', authMiddleware, (req: Request, res: Response) => {
       const dest = `covers/${track.username}-${shortId}${ext}`;
       const coverUrl = await uploadToFirebase(req.file.buffer, dest, req.file.mimetype);
 
-      db.query('UPDATE tracks SET cover_url = ? WHERE id = ?').run(coverUrl, req.params.id);
+      await db.query('UPDATE tracks SET cover_url = ? WHERE id = ?').run(coverUrl, req.params.id);
 
       res.json({ coverUrl });
     } catch (e: any) {
@@ -474,9 +474,9 @@ router.post('/:id/cover', authMiddleware, (req: Request, res: Response) => {
   });
 });
 
-router.delete('/:id', authMiddleware, (req: Request, res: Response) => {
+router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const track = db.query('SELECT * FROM tracks WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
+  const track = await db.query('SELECT * FROM tracks WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
 
   if (!track) return res.status(404).json({ error: 'Track not found' });
 
@@ -491,13 +491,13 @@ router.delete('/:id', authMiddleware, (req: Request, res: Response) => {
 
   deleteFromFirebase(`waveforms/${track.id}.json`);
 
-  db.query('DELETE FROM tracks WHERE id = ?').run(req.params.id);
+  await db.query('DELETE FROM tracks WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
 router.get('/:id/stream', optionalAuth, async (req: Request, res: Response) => {
   const db = getDb();
-  const track = db.query('SELECT t.*, u.username, u.display_name FROM tracks t JOIN users u ON t.user_id = u.id WHERE t.id = ?').get(req.params.id) as any;
+  const track = await db.query('SELECT t.*, u.username, u.display_name FROM tracks t JOIN users u ON t.user_id = u.id WHERE t.id = ?').get(req.params.id) as any;
 
   if (!track) return res.status(404).json({ error: 'Track not found' });
   if (!track.is_public && (!req.user || req.user.userId !== track.user_id)) {
@@ -542,13 +542,13 @@ router.get('/:id/stream', optionalAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/:id/like', authMiddleware, (req: Request, res: Response) => {
+router.post('/:id/like', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const track = db.query('SELECT id, user_id, title FROM tracks WHERE id = ?').get(req.params.id) as any;
+  const track = await db.query('SELECT id, user_id, title FROM tracks WHERE id = ?').get(req.params.id) as any;
   if (!track) return res.status(404).json({ error: 'Track not found' });
 
-  db.query('INSERT OR IGNORE INTO likes (user_id, track_id) VALUES (?, ?)').run(req.user!.userId, req.params.id);
-  const count = db.query('SELECT COUNT(*) as count FROM likes WHERE track_id = ?').get(req.params.id) as any;
+  await db.query('INSERT OR IGNORE INTO likes (user_id, track_id) VALUES (?, ?)').run(req.user!.userId, req.params.id);
+  const count = await db.query('SELECT COUNT(*) as count FROM likes WHERE track_id = ?').get(req.params.id) as any;
 
   if (track.user_id !== req.user!.userId) {
     createNotification(
@@ -563,16 +563,16 @@ router.post('/:id/like', authMiddleware, (req: Request, res: Response) => {
   res.json({ liked: true, likes_count: count.count });
 });
 
-router.post('/:id/unlike', authMiddleware, (req: Request, res: Response) => {
+router.post('/:id/unlike', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  db.query('DELETE FROM likes WHERE user_id = ? AND track_id = ?').run(req.user!.userId, req.params.id);
-  const count = db.query('SELECT COUNT(*) as count FROM likes WHERE track_id = ?').get(req.params.id) as any;
+  await db.query('DELETE FROM likes WHERE user_id = ? AND track_id = ?').run(req.user!.userId, req.params.id);
+  const count = await db.query('SELECT COUNT(*) as count FROM likes WHERE track_id = ?').get(req.params.id) as any;
   res.json({ liked: false, likes_count: count.count });
 });
 
 router.get('/:id/download', optionalAuth, async (req: Request, res: Response) => {
   const db = getDb();
-  const track = db.query('SELECT t.*, u.username, u.display_name FROM tracks t JOIN users u ON t.user_id = u.id WHERE t.id = ?').get(req.params.id) as any;
+  const track = await db.query('SELECT t.*, u.username, u.display_name FROM tracks t JOIN users u ON t.user_id = u.id WHERE t.id = ?').get(req.params.id) as any;
 
   if (!track) return res.status(404).json({ error: 'Track not found' });
   if (!track.is_public && (!req.user || req.user.userId !== track.user_id)) {
@@ -583,7 +583,7 @@ router.get('/:id/download', optionalAuth, async (req: Request, res: Response) =>
   }
 
   try {
-    db.query('UPDATE tracks SET downloads = downloads + 1 WHERE id = ?').run(req.params.id);
+    await db.query('UPDATE tracks SET downloads = downloads + 1 WHERE id = ?').run(req.params.id);
 
     const [url] = await bucket.file(track.filename).getSignedUrl({
       action: 'read',

@@ -21,7 +21,7 @@ const loginSchema = z.object({
 
 const router = Router();
 
-router.post('/register', (req: Request, res: Response) => {
+router.post('/register', async (req: Request, res: Response) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.errors.map(e => e.message).join(', ') });
@@ -29,11 +29,11 @@ router.post('/register', (req: Request, res: Response) => {
   const { username, email, password, displayName } = parsed.data;
 
   const db = getDb();
-  const existingUser = db.query('SELECT id FROM users WHERE username = ?').get(username);
+  const existingUser = await db.query('SELECT id FROM users WHERE username = ?').get(username);
   if (existingUser) {
     return res.status(409).json({ error: 'El nombre de usuario ya está en uso' });
   }
-  const existingEmail = db.query('SELECT id FROM users WHERE email = ?').get(email);
+  const existingEmail = await db.query('SELECT id FROM users WHERE email = ?').get(email);
   if (existingEmail) {
     return res.status(409).json({ error: 'El email ya está registrado' });
   }
@@ -41,7 +41,7 @@ router.post('/register', (req: Request, res: Response) => {
   const id = uuid();
   const hashed = bcrypt.hashSync(password, 10);
 
-  db.query(
+  await db.query(
     'INSERT INTO users (id, username, email, password, display_name) VALUES (?, ?, ?, ?, ?)'
   ).run(id, username, email, hashed, displayName || username);
 
@@ -49,7 +49,7 @@ router.post('/register', (req: Request, res: Response) => {
   res.status(201).json({ token, user: { id, username, displayName: displayName || username } });
 });
 
-router.post('/login', (req: Request, res: Response) => {
+router.post('/login', async (req: Request, res: Response) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid credentials format' });
@@ -57,7 +57,7 @@ router.post('/login', (req: Request, res: Response) => {
   const { username, password } = parsed.data;
 
   const db = getDb();
-  const user = db.query('SELECT * FROM users WHERE username = ?').get(username) as any;
+  const user = await db.query('SELECT * FROM users WHERE username = ?').get(username) as any;
 
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.status(401).json({ error: 'Invalid credentials' });
@@ -67,7 +67,7 @@ router.post('/login', (req: Request, res: Response) => {
   res.json({ token, user: { id: user.id, username: user.username, displayName: user.display_name } });
 });
 
-router.get('/me', (req: Request, res: Response) => {
+router.get('/me', async (req: Request, res: Response) => {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token' });
@@ -76,7 +76,7 @@ router.get('/me', (req: Request, res: Response) => {
   try {
     const decoded = jwt.verify(header.slice(7), getJwtSecret()) as AuthPayload;
     const db = getDb();
-    const user = db.query(
+    const user = await db.query(
       'SELECT id, username, display_name, email, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook, is_public FROM users WHERE id = ?'
     ).get(decoded.userId) as any;
 
@@ -91,14 +91,14 @@ const resetPasswordSchema = z.object({
   email: z.string().email(),
 });
 
-router.post('/forgot-password', (req: Request, res: Response) => {
+router.post('/forgot-password', async (req: Request, res: Response) => {
   const parsed = resetPasswordSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Email inválido' });
   }
   const { email } = parsed.data;
   const db = getDb();
-  const user = db.query('SELECT id, email FROM users WHERE email = ?').get(email) as any;
+  const user = await db.query('SELECT id, email FROM users WHERE email = ?').get(email) as any;
   if (!user) {
     return res.json({ message: 'Si el email existe, recibirás un enlace de recuperación' });
   }
@@ -106,7 +106,7 @@ router.post('/forgot-password', (req: Request, res: Response) => {
   const token = uuid() + uuid();
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
-  db.query(
+  await db.query(
     'INSERT INTO password_resets (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)'
   ).run(uuid(), user.id, token, expiresAt);
 
@@ -149,7 +149,7 @@ const changePasswordSchema = z.object({
   password: z.string().min(6).max(128),
 });
 
-router.post('/reset-password', (req: Request, res: Response) => {
+router.post('/reset-password', async (req: Request, res: Response) => {
   const parsed = changePasswordSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Token inválido o contraseña muy corta (mín 6 caracteres)' });
@@ -157,8 +157,8 @@ router.post('/reset-password', (req: Request, res: Response) => {
   const { token, password } = parsed.data;
   const db = getDb();
 
-  const row = db.query(
-    'SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > datetime(\'now\')'
+  const row = await db.query(
+    'SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > NOW()'
   ).get(token) as any;
 
   if (!row) {
@@ -166,8 +166,8 @@ router.post('/reset-password', (req: Request, res: Response) => {
   }
 
   const hashed = bcrypt.hashSync(password, 10);
-  db.query('UPDATE users SET password = ? WHERE id = ?').run(hashed, row.user_id);
-  db.query('UPDATE password_resets SET used = 1 WHERE id = ?').run(row.id);
+  await db.query('UPDATE users SET password = ? WHERE id = ?').run(hashed, row.user_id);
+  await db.query('UPDATE password_resets SET used = 1 WHERE id = ?').run(row.id);
 
   res.json({ message: 'Contraseña actualizada correctamente' });
 });

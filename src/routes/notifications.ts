@@ -27,9 +27,9 @@ router.get('/stream', (req: Request, res: Response) => {
   }
 });
 
-router.get('/', authMiddleware, (req: Request, res: Response) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const notifications = db.query(`
+  const notifications = await db.query(`
     SELECT n.*,
       u.username as actor_username,
       u.display_name as actor_display_name,
@@ -45,17 +45,17 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   res.json(notifications);
 });
 
-router.post('/:id/read', authMiddleware, (req: Request, res: Response) => {
+router.post('/:id/read', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  db.query(
+  await db.query(
     'UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?'
   ).run(req.params.id, req.user!.userId);
   res.json({ success: true });
 });
 
-router.post('/read-all', authMiddleware, (req: Request, res: Response) => {
+router.post('/read-all', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  db.query(
+  await db.query(
     'UPDATE notifications SET read = 1 WHERE user_id = ? AND read = 0'
   ).run(req.user!.userId);
   res.json({ success: true });
@@ -63,7 +63,7 @@ router.post('/read-all', authMiddleware, (req: Request, res: Response) => {
 
 export default router;
 
-export function createNotification(
+export async function createNotification(
   userId: string,
   type: string,
   message: string,
@@ -73,10 +73,10 @@ export function createNotification(
   if (userId === actorId) return;
   const db = getDb();
   const id = uuid();
-  db.query(
+  await db.query(
     'INSERT INTO notifications (id, user_id, type, message, track_id, actor_id) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, userId, type, message, trackId, actorId);
-  const notification = db.query(`
+  const notification = await db.query(`
     SELECT n.*, u.username as actor_username, u.display_name as actor_display_name,
       u.avatar_url as actor_avatar_url, t.title as track_title
     FROM notifications n

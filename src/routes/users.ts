@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db';
 import { authMiddleware } from '../middleware/auth';
@@ -10,24 +9,27 @@ import { uploadToFirebase, isValidImage } from '../services/firebase';
 
 const router = Router();
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
   const db = getDb();
-  const users = db.query(
+  const users = await db.query(
     'SELECT id, username, display_name, email, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook, is_public, created_at FROM users ORDER BY created_at DESC'
   ).all();
   res.json(users);
 });
 
-router.get('/db-check', (_req: Request, res: Response) => {
-  const db = getDb();
-  const userCount = (db.query('SELECT COUNT(*) as count FROM users').get() as any).count;
-  const users = db.query('SELECT username, email, created_at FROM users').all();
-  res.json({
-    databasePath: process.env.DATABASE_PATH || '(not set, using default)',
-    fileExists: fs.existsSync(process.env.DATABASE_PATH || ''),
-    userCount,
-    users,
-  });
+router.get('/db-check', async (_req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const userCount = await db.query('SELECT COUNT(*)::int as count FROM users').get() as any;
+    const users = await db.query('SELECT username, email, created_at FROM users').all();
+    res.json({
+      databaseUrl: process.env.DATABASE_URL ? '(set)' : '(not set)',
+      userCount: userCount?.count || 0,
+      users,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 const IMAGE_MEMORY_UPLOAD = multer({
@@ -42,58 +44,58 @@ const IMAGE_MEMORY_UPLOAD = multer({
   },
 });
 
-router.get('/search', (req: Request, res: Response) => {
+router.get('/search', async (req: Request, res: Response) => {
   const q = (req.query.q as string || '').trim();
   if (!q) return res.json([]);
 
   const db = getDb();
-  const users = db.query(`
+  const users = await db.query(`
     SELECT id, username, display_name, bio, avatar_url, banner_url
     FROM users
-    WHERE username LIKE ? OR display_name LIKE ?
+    WHERE username ILIKE ? OR display_name ILIKE ?
     LIMIT 20
   `).all(`%${q}%`, `%${q}%`);
 
   res.json(users);
 });
 
-router.post('/follow/:id/notify-toggle', authMiddleware, (req: Request, res: Response) => {
+router.post('/follow/:id/notify-toggle', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
   const { userId } = req.user!;
   const targetId = req.params.id;
-  const row = db.query('SELECT notify_on_upload FROM follows WHERE follower_id = ? AND following_id = ?').get(userId, targetId) as any;
+  const row = await db.query('SELECT notify_on_upload FROM follows WHERE follower_id = ? AND following_id = ?').get(userId, targetId) as any;
   if (!row) {
     return res.status(400).json({ error: 'No estás siguiendo a este usuario' });
   }
   const newVal = row.notify_on_upload ? 0 : 1;
-  db.query('UPDATE follows SET notify_on_upload = ? WHERE follower_id = ? AND following_id = ?').run(newVal, userId, targetId);
+  await db.query('UPDATE follows SET notify_on_upload = ? WHERE follower_id = ? AND following_id = ?').run(newVal, userId, targetId);
   res.json({ notify_on_upload: !!newVal });
 });
 
-router.post('/follow/:id', authMiddleware, (req: Request, res: Response) => {
+router.post('/follow/:id', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
   const targetId = req.params.id;
   if (targetId === req.user!.userId) return res.status(400).json({ error: 'Cannot follow yourself' });
 
-  const exists = db.query('SELECT id FROM users WHERE id = ?').get(targetId);
+  const exists = await db.query('SELECT id FROM users WHERE id = ?').get(targetId);
   if (!exists) return res.status(404).json({ error: 'User not found' });
 
-  db.query('INSERT OR IGNORE INTO follows (follower_id, following_id) VALUES (?, ?)').run(req.user!.userId, targetId);
+  await db.query('INSERT OR IGNORE INTO follows (follower_id, following_id) VALUES (?, ?)').run(req.user!.userId, targetId);
 
   createNotification(targetId, 'follow', 'empezó a seguirte', '', req.user!.userId);
 
   res.json({ followed: true });
 });
 
-router.post('/unfollow/:id', authMiddleware, (req: Request, res: Response) => {
+router.post('/unfollow/:id', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  db.query('DELETE FROM follows WHERE follower_id = ? AND following_id = ?').run(req.user!.userId, req.params.id);
+  await db.query('DELETE FROM follows WHERE follower_id = ? AND following_id = ?').run(req.user!.userId, req.params.id);
   res.json({ followed: false });
 });
 
-router.get('/followers/:id', (req: Request, res: Response) => {
+router.get('/followers/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const followers = db.query(`
+  const followers = await db.query(`
     SELECT u.id, u.username, u.display_name, u.avatar_url
     FROM follows f JOIN users u ON u.id = f.follower_id
     WHERE f.following_id = ? AND u.is_public = 1
@@ -102,9 +104,9 @@ router.get('/followers/:id', (req: Request, res: Response) => {
   res.json(followers);
 });
 
-router.get('/following/:id', (req: Request, res: Response) => {
+router.get('/following/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const following = db.query(`
+  const following = await db.query(`
     SELECT u.id, u.username, u.display_name, u.avatar_url
     FROM follows f JOIN users u ON u.id = f.following_id
     WHERE f.follower_id = ? AND u.is_public = 1
@@ -113,15 +115,15 @@ router.get('/following/:id', (req: Request, res: Response) => {
   res.json(following);
 });
 
-router.get('/check-follow/:id', authMiddleware, (req: Request, res: Response) => {
+router.get('/check-follow/:id', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const row = db.query('SELECT notify_on_upload FROM follows WHERE follower_id = ? AND following_id = ?').get(req.user!.userId, req.params.id) as any;
+  const row = await db.query('SELECT notify_on_upload FROM follows WHERE follower_id = ? AND following_id = ?').get(req.user!.userId, req.params.id) as any;
   res.json({ following: !!row, notify_on_upload: row ? !!row.notify_on_upload : false });
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const user = db.query(`
+  const user = await db.query(`
     SELECT id, username, display_name, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook,
       (SELECT COUNT(*) FROM follows WHERE following_id = users.id) as followers_count,
       (SELECT COUNT(*) FROM follows WHERE follower_id = users.id) as following_count
@@ -130,18 +132,18 @@ router.get('/:id', (req: Request, res: Response) => {
 
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const tracks = db.query(`
+  const tracks = await db.query(`
     SELECT t.*,
       (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count
     FROM tracks t WHERE t.user_id = ? AND t.is_public = 1 ORDER BY t.created_at DESC
   `).all(req.params.id);
 
-  const playlists = db.query(`
+  const playlists = await db.query(`
     SELECT p.*, (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = p.id) as track_count
     FROM playlists p WHERE p.user_id = ? AND p.is_public = 1 ORDER BY p.created_at DESC
   `).all(req.params.id);
 
-  const recentPlays = db.query(`
+  const recentPlays = await db.query(`
     SELECT t.id, t.title, t.artist, t.cover_url, t.plays, t.duration,
       u.username, u.display_name, MAX(ph.created_at) as last_played
     FROM play_history ph
@@ -156,9 +158,9 @@ router.get('/:id', (req: Request, res: Response) => {
   res.json({ ...user, tracks, playlists, recentPlays });
 });
 
-router.get('/:id/recent-plays', (req: Request, res: Response) => {
+router.get('/:id/recent-plays', async (req: Request, res: Response) => {
   const db = getDb();
-  const tracks = db.query(`
+  const tracks = await db.query(`
     SELECT t.id, t.title, t.artist, t.cover_url, t.plays, t.duration,
       u.username, u.display_name, MAX(ph.created_at) as last_played
     FROM play_history ph
@@ -172,11 +174,11 @@ router.get('/:id/recent-plays', (req: Request, res: Response) => {
   res.json(tracks);
 });
 
-router.put('/profile', authMiddleware, (req: Request, res: Response) => {
+router.put('/profile', authMiddleware, async (req: Request, res: Response) => {
   const { displayName, bio, socialInstagram, socialTiktok, socialFacebook, isPublic } = req.body;
   const db = getDb();
 
-  db.query(`
+  await db.query(`
     UPDATE users SET
       display_name = COALESCE(?, display_name),
       bio = COALESCE(?, bio),
@@ -192,7 +194,7 @@ router.put('/profile', authMiddleware, (req: Request, res: Response) => {
     req.user!.userId
   );
 
-  const updated = db.query('SELECT id, username, display_name, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook, is_public FROM users WHERE id = ?').get(req.user!.userId);
+  const updated = await db.query('SELECT id, username, display_name, bio, avatar_url, banner_url, social_instagram, social_tiktok, social_facebook, is_public FROM users WHERE id = ?').get(req.user!.userId);
   res.json(updated);
 });
 
@@ -207,13 +209,13 @@ router.post('/avatar', authMiddleware, (req: Request, res: Response) => {
       }
 
       const db = getDb();
-      const user = db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
+      const user = await db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
 
       const ext = path.extname(req.file.originalname) || '.jpg';
       const dest = `avatars/${user.username}${ext}`;
       const avatarUrl = await uploadToFirebase(req.file.buffer, dest, req.file.mimetype);
 
-      db.query('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, req.user!.userId);
+      await db.query('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, req.user!.userId);
 
       res.json({ avatarUrl });
     } catch (e: any) {
@@ -233,13 +235,13 @@ router.post('/banner', authMiddleware, (req: Request, res: Response) => {
       }
 
       const db = getDb();
-      const user = db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
+      const user = await db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
 
       const ext = path.extname(req.file.originalname) || '.jpg';
       const dest = `banners/${user.username}${ext}`;
       const bannerUrl = await uploadToFirebase(req.file.buffer, dest, req.file.mimetype);
 
-      db.query('UPDATE users SET banner_url = ? WHERE id = ?').run(bannerUrl, req.user!.userId);
+      await db.query('UPDATE users SET banner_url = ? WHERE id = ?').run(bannerUrl, req.user!.userId);
 
       res.json({ bannerUrl });
     } catch (e: any) {

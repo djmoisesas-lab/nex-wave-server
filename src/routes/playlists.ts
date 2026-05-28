@@ -32,23 +32,24 @@ const updatePlaylistSchema = z.object({
 
 const router = Router();
 
-router.get('/', optionalAuth, (req: Request, res: Response) => {
+router.get('/', optionalAuth, async (req: Request, res: Response) => {
   const db = getDb();
-  const playlists = db.query(`
+  const playlists = await db.query(`
     SELECT p.*, u.username, u.display_name,
       (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = p.id) as track_count
     FROM playlists p
     JOIN users u ON p.user_id = u.id
     WHERE p.is_public = 1
     ORDER BY p.created_at DESC
-  `).all();
+  `).all() as any[];
+
 
   res.json(playlists);
 });
 
-router.get('/my', authMiddleware, (req: Request, res: Response) => {
+router.get('/my', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const playlists = db.query(`
+  const playlists = await db.query(`
     SELECT p.*,
       (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = p.id) as track_count
     FROM playlists p
@@ -59,9 +60,9 @@ router.get('/my', authMiddleware, (req: Request, res: Response) => {
   res.json(playlists);
 });
 
-router.get('/:id', optionalAuth, (req: Request, res: Response) => {
+router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
   const db = getDb();
-  const playlist = db.query(`
+  const playlist = await db.query(`
     SELECT p.*, u.username, u.display_name
     FROM playlists p
     JOIN users u ON p.user_id = u.id
@@ -73,7 +74,7 @@ router.get('/:id', optionalAuth, (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Playlist not found' });
   }
 
-  const tracks = db.query(`
+  const tracks = await db.query(`
     SELECT t.*, pt.position, pt.added_at
     FROM playlist_tracks pt
     JOIN tracks t ON t.id = pt.track_id
@@ -84,7 +85,7 @@ router.get('/:id', optionalAuth, (req: Request, res: Response) => {
   res.json({ ...playlist, tracks });
 });
 
-router.post('/', authMiddleware, (req: Request, res: Response) => {
+router.post('/', authMiddleware, async (req: Request, res: Response) => {
   const parsed = createPlaylistSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.errors.map(e => e.message).join(', ') });
@@ -94,27 +95,27 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
   const db = getDb();
   const id = uuid();
 
-  db.query(
+  await db.query(
     'INSERT INTO playlists (id, user_id, name, description) VALUES (?, ?, ?, ?)'
   ).run(id, req.user!.userId, name, description || '');
 
-  const created = db.query('SELECT * FROM playlists WHERE id = ?').get(id);
+  const created = await db.query('SELECT * FROM playlists WHERE id = ?').get(id);
   res.status(201).json(created);
 });
 
-router.put('/:id', authMiddleware, (req: Request, res: Response) => {
+router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
   const parsed = updatePlaylistSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.errors.map(e => e.message).join(', ') });
   }
 
   const db = getDb();
-  const existing = db.query('SELECT * FROM playlists WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
+  const existing = await db.query('SELECT * FROM playlists WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
 
   if (!existing) return res.status(404).json({ error: 'Playlist not found' });
 
   const { name, description, isPublic } = parsed.data;
-  db.query(`
+  await db.query(`
     UPDATE playlists SET
       name = COALESCE(?, name),
       description = COALESCE(?, description),
@@ -122,51 +123,51 @@ router.put('/:id', authMiddleware, (req: Request, res: Response) => {
     WHERE id = ?
   `).run(name || null, description || null, isPublic !== undefined ? (isPublic ? 1 : 0) : null, req.params.id);
 
-  const updated = db.query('SELECT * FROM playlists WHERE id = ?').get(req.params.id);
+  const updated = await db.query('SELECT * FROM playlists WHERE id = ?').get(req.params.id);
   res.json(updated);
 });
 
-router.delete('/:id', authMiddleware, (req: Request, res: Response) => {
+router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const existing = db.query('SELECT * FROM playlists WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId);
+  const existing = await db.query('SELECT * FROM playlists WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId);
 
   if (!existing) return res.status(404).json({ error: 'Playlist not found' });
 
-  db.query('DELETE FROM playlists WHERE id = ?').run(req.params.id);
+  await db.query('DELETE FROM playlists WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
-router.post('/:id/tracks', authMiddleware, (req: Request, res: Response) => {
+router.post('/:id/tracks', authMiddleware, async (req: Request, res: Response) => {
   const { trackId } = req.body;
   if (!trackId) return res.status(400).json({ error: 'trackId is required' });
 
   const db = getDb();
-  const playlist = db.query('SELECT * FROM playlists WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
+  const playlist = await db.query('SELECT * FROM playlists WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
 
-  const maxPos = db.query('SELECT MAX(position) as max FROM playlist_tracks WHERE playlist_id = ?').get(req.params.id) as any;
+  const maxPos = await db.query('SELECT MAX(position) as max FROM playlist_tracks WHERE playlist_id = ?').get(req.params.id) as any;
   const position = (maxPos?.max ?? -1) + 1;
 
-  db.query(
+  await db.query(
     'INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)'
   ).run(req.params.id, trackId, position);
 
   res.status(201).json({ success: true });
 });
 
-router.delete('/:playlistId/tracks/:trackId', authMiddleware, (req: Request, res: Response) => {
+router.delete('/:playlistId/tracks/:trackId', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const playlist = db.query('SELECT * FROM playlists WHERE id = ? AND user_id = ?').get(req.params.playlistId, req.user!.userId);
+  const playlist = await db.query('SELECT * FROM playlists WHERE id = ? AND user_id = ?').get(req.params.playlistId, req.user!.userId);
 
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
 
-  db.query('DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?').run(req.params.playlistId, req.params.trackId);
+  await db.query('DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?').run(req.params.playlistId, req.params.trackId);
   res.json({ success: true });
 });
 
-router.post('/:id/cover', authMiddleware, (req: Request, res: Response) => {
+router.post('/:id/cover', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const existing = db.query('SELECT p.*, u.username FROM playlists p JOIN users u ON p.user_id = u.id WHERE p.id = ? AND p.user_id = ?').get(req.params.id, req.user!.userId) as any;
+  const existing = await db.query('SELECT p.*, u.username FROM playlists p JOIN users u ON p.user_id = u.id WHERE p.id = ? AND p.user_id = ?').get(req.params.id, req.user!.userId) as any;
   if (!existing) return res.status(404).json({ error: 'Playlist not found' });
 
   coverUpload.single('cover')(req, res, async (err) => {
@@ -183,7 +184,7 @@ router.post('/:id/cover', authMiddleware, (req: Request, res: Response) => {
       const dest = `playlists/${existing.username}-${shortId}${ext}`;
       const coverUrl = await uploadToFirebase(req.file.buffer, dest, req.file.mimetype);
 
-      db.query('UPDATE playlists SET cover_url = ? WHERE id = ?').run(coverUrl, req.params.id);
+      await db.query('UPDATE playlists SET cover_url = ? WHERE id = ?').run(coverUrl, req.params.id);
       res.json({ coverUrl });
     } catch (e: any) {
       res.status(500).json({ error: e.message || 'Error al subir cover' });
