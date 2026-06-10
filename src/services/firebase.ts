@@ -1,4 +1,5 @@
 import admin from 'firebase-admin';
+import fs from 'fs';
 
 const BUCKET_NAME = process.env.FIREBASE_STORAGE_BUCKET || 'dj-catalog-web.firebasestorage.app';
 
@@ -40,6 +41,23 @@ export async function uploadToFirebase(
 ): Promise<string> {
   const file = bucket.file(destination);
   await file.save(buffer, { contentType, public: true });
+  return `https://storage.googleapis.com/${BUCKET_NAME}/${destination}`;
+}
+
+export async function uploadToFirebaseFromPath(
+  filePath: string,
+  destination: string,
+  contentType: string,
+): Promise<string> {
+  const file = bucket.file(destination);
+  await new Promise<void>((resolve, reject) => {
+    const readStream = fs.createReadStream(filePath);
+    const writeStream = file.createWriteStream({ contentType, public: true, resumable: true });
+    readStream.pipe(writeStream);
+    writeStream.on('finish', () => resolve());
+    writeStream.on('error', reject);
+    readStream.on('error', reject);
+  });
   return `https://storage.googleapis.com/${BUCKET_NAME}/${destination}`;
 }
 

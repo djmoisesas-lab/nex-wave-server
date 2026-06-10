@@ -13,11 +13,11 @@ router.get('/stream', (req: Request, res: Response) => {
   if (!token) return res.status(401).json({ error: 'Token required' });
   try {
     const payload = jwt.verify(token, getJwtSecret()) as { userId: string };
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
+    res.status(200);
+    res.set('Content-Type', 'text/event-stream');
+    res.set('Cache-Control', 'no-cache');
+    res.set('X-Accel-Buffering', 'no');
+    res.flushHeaders();
     res.write('event: connected\ndata: {}\n\n');
     addClient(payload.userId, res);
     const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 30000);

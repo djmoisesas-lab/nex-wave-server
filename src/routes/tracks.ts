@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, optionalAuth } from '../middleware/auth';
 import { createNotification } from './notifications';
-import { uploadToFirebase, deleteFromFirebase, extractFirebasePath, isValidImage, bucket } from '../services/firebase';
+import { uploadToFirebase, uploadToFirebaseFromPath, deleteFromFirebase, extractFirebasePath, isValidImage, bucket } from '../services/firebase';
 
 const updateTrackSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -118,7 +118,8 @@ function generateWaveform(filePath: string, points: number = 200): number[] {
 
   try {
     for (let i = 0; i < points; i++) {
-      const bytesRead = fs.readSync(fd, buf, 0, CHUNK_SIZE, Math.min(i * CHUNK_SIZE, fileSize - CHUNK_SIZE));
+      const offset = Math.min(i * CHUNK_SIZE, Math.max(0, fileSize - CHUNK_SIZE));
+      const bytesRead = fs.readSync(fd, buf, 0, CHUNK_SIZE, offset);
       if (bytesRead === 0) break;
 
       let sum = 0;
@@ -330,81 +331,92 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No audio file provided' });
     }
 
-    const { title, artist, genre, bpm, musicalKey, description, coverUrl } = req.body;
-    if (!title || typeof title !== 'string' || title.trim().length === 0) {
-      activeUploads--;
-      return res.status(400).json({ error: 'Title is required' });
-    }
-    if (title.length > 200) {
-      activeUploads--;
-      return res.status(400).json({ error: 'Title must be 200 characters or less' });
-    }
-
-    const ext = path.extname(req.file.originalname).toLowerCase();
-
-    if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
-    const tempPath = path.resolve(TEMP_DIR, `${uuid()}${ext}`);
-    fs.writeFileSync(tempPath, req.file.buffer);
-
-    const detectedMime = detectMimeType(tempPath, ext);
-    if (!detectedMime) {
-      fs.unlinkSync(tempPath);
-      activeUploads--;
-      return res.status(400).json({ error: 'El archivo no parece un formato de audio v\u00e1lido' });
-    }
-
-    const duration = await getAudioDuration(tempPath);
-
-    const db = getDb();
-    const id = uuid();
-    const user = await db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
-
-    let waveformJson: string | null = null;
     try {
-      const waveformData = generateWaveform(tempPath, 200);
-      waveformJson = JSON.stringify(waveformData);
-      await uploadToFirebase(Buffer.from(waveformJson), `waveforms/${id}.json`, 'application/json');
-    } catch {
+      const { title, artist, genre, bpm, musicalKey, description, coverUrl } = req.body;
+      if (!title || typeof title !== 'string' || title.trim().length === 0) {
+        activeUploads--;
+        return res.status(400).json({ error: 'Title is required' });
+      }
+      if (title.length > 200) {
+        activeUploads--;
+        return res.status(400).json({ error: 'Title must be 200 characters or less' });
+      }
+
+      const ext = path.extname(req.file.originalname).toLowerCase();
+
+      if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
+      const tempPath = path.resolve(TEMP_DIR, `${uuid()}${ext}`);
+      fs.writeFileSync(tempPath, req.file.buffer);
+
+      const detectedMime = detectMimeType(tempPath, ext);
+      if (!detectedMime) {
+        fs.unlinkSync(tempPath);
+        activeUploads--;
+        return res.status(400).json({ error: 'El archivo no parece un formato de audio v\u00e1lido' });
+      }
+
+      const duration = await getAudioDuration(tempPath);
+
+      const db = getDb();
+      const id = uuid();
+      const user = await db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
+
+      let waveformJson: string | null = null;
+      try {
+        const waveformData = generateWaveform(tempPath, 200);
+        waveformJson = JSON.stringify(waveformData);
+        await uploadToFirebase(Buffer.from(waveformJson), `waveforms/${id}.json`, 'application/json');
+      } catch {
+      }
+
+      const shortId = uuid().slice(0, 8);
+      const firebaseDest = `audios/${user.username}-${shortId}${ext}`;
+      try {
+        await uploadToFirebaseFromPath(tempPath, firebaseDest, detectedMime);
+      } catch (fbErr) {
+        fs.unlinkSync(tempPath);
+        activeUploads--;
+        return res.status(502).json({ error: 'Error al subir el archivo a Firebase. Intentá de nuevo.' });
+      }
+
+      fs.unlinkSync(tempPath);
+
+      const track = {
+        id,
+        user_id: req.user!.userId,
+        title,
+        artist: artist || '',
+        genre: genre || '',
+        bpm: bpm ? parseFloat(bpm) : null,
+        musical_key: musicalKey || '',
+        description: description || '',
+        filename: firebaseDest,
+        original_name: req.file.originalname,
+        mime_type: detectedMime,
+        file_size: req.file.size,
+        duration,
+        cover_url: coverUrl || null,
+        is_public: 1,
+      };
+
+      await db.query(`
+        INSERT INTO tracks (id, user_id, title, artist, genre, bpm, musical_key, description, filename, original_name, mime_type, file_size, duration, cover_url, is_public, waveform_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, req.user!.userId, title, track.artist, track.genre, track.bpm, track.musical_key, track.description, track.filename, track.original_name, track.mime_type, track.file_size, track.duration, track.cover_url, track.is_public, waveformJson);
+
+      const followers = await db.query(`
+        SELECT follower_id FROM follows WHERE following_id = ? AND notify_on_upload = 1
+      `).all(req.user!.userId) as { follower_id: string }[];
+      for (const f of followers) {
+        createNotification(f.follower_id, 'upload', `subió un nuevo set: "${title}"`, id, req.user!.userId);
+      }
+
+      activeUploads--;
+      res.status(201).json({ id, ...track });
+    } catch (uploadErr) {
+      activeUploads--;
+      res.status(500).json({ error: 'Error interno al procesar la subida.' });
     }
-
-    const shortId = uuid().slice(0, 8);
-    const firebaseDest = `audios/${user.username}-${shortId}${ext}`;
-    await uploadToFirebase(req.file.buffer, firebaseDest, detectedMime);
-
-    fs.unlinkSync(tempPath);
-
-    const track = {
-      id,
-      user_id: req.user!.userId,
-      title,
-      artist: artist || '',
-      genre: genre || '',
-      bpm: bpm ? parseFloat(bpm) : null,
-      musical_key: musicalKey || '',
-      description: description || '',
-      filename: firebaseDest,
-      original_name: req.file.originalname,
-      mime_type: detectedMime,
-      file_size: req.file.size,
-      duration,
-      cover_url: coverUrl || null,
-      is_public: 1,
-    };
-
-    await db.query(`
-      INSERT INTO tracks (id, user_id, title, artist, genre, bpm, musical_key, description, filename, original_name, mime_type, file_size, duration, cover_url, is_public, waveform_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, req.user!.userId, title, track.artist, track.genre, track.bpm, track.musical_key, track.description, track.filename, track.original_name, track.mime_type, track.file_size, track.duration, track.cover_url, track.is_public, waveformJson);
-
-    const followers = await db.query(`
-      SELECT follower_id FROM follows WHERE following_id = ? AND notify_on_upload = 1
-    `).all(req.user!.userId) as { follower_id: string }[];
-    for (const f of followers) {
-      createNotification(f.follower_id, 'upload', `subió un nuevo set: "${title}"`, id, req.user!.userId);
-    }
-
-    activeUploads--;
-    res.status(201).json({ id, ...track });
   });
 });
 
