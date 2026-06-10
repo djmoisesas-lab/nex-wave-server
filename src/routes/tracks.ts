@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, optionalAuth } from '../middleware/auth';
 import { createNotification } from './notifications';
-import { uploadToFirebase, deleteFromFirebase, extractFirebasePath, isValidImage, bucket } from '../services/firebase';
+import { uploadToFirebase, deleteFromFirebase, extractFirebasePath, isValidImage, bucket, generateUploadUrl } from '../services/firebase';
 
 const updateTrackSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -304,6 +304,104 @@ router.post('/:id/report', optionalAuth, async (req: Request, res: Response) => 
     'INSERT INTO reports (id, track_id, user_id, reason, description) VALUES (?, ?, ?, ?, ?)'
   ).run(uuid(), req.params.id, req.user?.userId || null, reason.trim(), (description || '').trim());
   res.json({ success: true, message: 'Reporte enviado. Gracias por ayudar a mantener la comunidad.' });
+});
+
+router.post('/init-upload', authMiddleware, async (req: Request, res: Response) => {
+  const { ext, contentType } = req.body;
+  if (!ext || typeof ext !== 'string') {
+    return res.status(400).json({ error: 'File extension required' });
+  }
+  const allowedExts = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a'];
+  const extLower = ext.startsWith('.') ? ext.toLowerCase() : `.${ext.toLowerCase()}`;
+  if (!allowedExts.includes(extLower)) {
+    return res.status(400).json({ error: 'Invalid file type. Allowed: mp3, wav, flac, aac, ogg, m4a' });
+  }
+  try {
+    const db = getDb();
+    const user = await db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
+    const shortId = uuid().slice(0, 8);
+    const dest = `audios/${user.username}-${shortId}${extLower}`;
+    const uploadUrl = await generateUploadUrl(dest, contentType || 'audio/mpeg');
+    res.json({ url: uploadUrl, path: dest });
+  } catch (e) {
+    res.status(500).json({ error: 'Error al generar URL de subida' });
+  }
+});
+
+router.post('/from-firebase', authMiddleware, async (req: Request, res: Response) => {
+  const { firebasePath, title, artist, genre, bpm, musicalKey, description, originalName } = req.body;
+  if (!firebasePath || typeof firebasePath !== 'string') {
+    return res.status(400).json({ error: 'firebasePath required' });
+  }
+  if (!title || typeof title !== 'string' || title.trim().length === 0) {
+    return res.status(400).json({ error: 'Title is required' });
+  }
+  if (title.length > 200) {
+    return res.status(400).json({ error: 'Title must be 200 characters or less' });
+  }
+
+  try {
+    const ext = path.extname(firebasePath).toLowerCase();
+    if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
+    const tempPath = path.resolve(TEMP_DIR, `${uuid()}${ext}`);
+
+    const fbFile = bucket.file(firebasePath);
+    const [meta] = await fbFile.getMetadata();
+    const fileSize = parseInt(meta.size, 10);
+    const detectedMime = meta.contentType || 'audio/mpeg';
+
+    // Download from Firebase to temp for processing
+    await fbFile.download({ destination: tempPath });
+
+    const duration = await getAudioDuration(tempPath);
+
+    const db = getDb();
+    const id = uuid();
+    const user = await db.query('SELECT username FROM users WHERE id = ?').get(req.user!.userId) as any;
+
+    let waveformJson: string | null = null;
+    try {
+      const waveformData = generateWaveform(tempPath, 200);
+      waveformJson = JSON.stringify(waveformData);
+      await uploadToFirebase(Buffer.from(waveformJson), `waveforms/${id}.json`, 'application/json');
+    } catch {}
+
+    fs.unlinkSync(tempPath);
+
+    const track = {
+      id,
+      user_id: req.user!.userId,
+      title,
+      artist: artist || '',
+      genre: genre || '',
+      bpm: bpm ? parseFloat(bpm) : null,
+      musical_key: musicalKey || '',
+      description: description || '',
+      filename: firebasePath,
+      original_name: originalName || firebasePath.split('/').pop() || firebasePath,
+      mime_type: detectedMime,
+      file_size: fileSize,
+      duration,
+      cover_url: null,
+      is_public: 1,
+    };
+
+    await db.query(`
+      INSERT INTO tracks (id, user_id, title, artist, genre, bpm, musical_key, description, filename, original_name, mime_type, file_size, duration, cover_url, is_public, waveform_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, req.user!.userId, title, track.artist, track.genre, track.bpm, track.musical_key, track.description, track.filename, track.original_name, track.mime_type, track.file_size, track.duration, track.cover_url, track.is_public, waveformJson);
+
+    const followers = await db.query(`
+      SELECT follower_id FROM follows WHERE following_id = ? AND notify_on_upload = 1
+    `).all(req.user!.userId) as { follower_id: string }[];
+    for (const f of followers) {
+      createNotification(f.follower_id, 'upload', `subió un nuevo set: "${title}"`, id, req.user!.userId);
+    }
+
+    res.status(201).json({ id, ...track });
+  } catch (e) {
+    res.status(500).json({ error: 'Error interno al procesar la subida.' });
+  }
 });
 
 router.post('/', authMiddleware, async (req: Request, res: Response) => {

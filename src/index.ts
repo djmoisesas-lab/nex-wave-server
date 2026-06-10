@@ -17,6 +17,7 @@ import notificationRoutes from './routes/notifications';
 import recommendationRoutes from './routes/recommendations';
 
 const app = express();
+app.set('trust proxy', true);
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -27,11 +28,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
+    callback(null, origin || true);
   },
   credentials: true,
 }));

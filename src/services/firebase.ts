@@ -55,6 +55,16 @@ export async function uploadToFirebaseFromPath(
   return `https://storage.googleapis.com/${BUCKET_NAME}/${destination}`;
 }
 
+export async function generateUploadUrl(destination: string, contentType: string): Promise<string> {
+  const [url] = await bucket.file(destination).getSignedUrl({
+    action: 'write',
+    expires: Date.now() + 60 * 60 * 1000,
+    contentType,
+    version: 'v4',
+  });
+  return url;
+}
+
 export async function deleteFromFirebase(destination: string) {
   await bucket.file(destination).delete().catch(() => {});
 }
