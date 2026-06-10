@@ -20,9 +20,10 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
+const extraOrigins = ['https://nex-wave-client.vercel.app', 'http://localhost:5173'];
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['https://nex-wave-client.vercel.app', 'https://nex-wave-server-production.up.railway.app', 'http://localhost:5173'];
+  ? [...process.env.ALLOWED_ORIGINS.split(','), ...extraOrigins]
+  : extraOrigins;
 
 app.use(cors({
   origin: (origin, callback) => {
