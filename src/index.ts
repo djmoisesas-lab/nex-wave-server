@@ -22,11 +22,11 @@ const isProd = process.env.NODE_ENV === 'production';
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
-  : null;
+  : ['https://nex-wave-client.vercel.app', 'https://nex-wave-server-production.up.railway.app', 'http://localhost:5173'];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || !allowedOrigins || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
