@@ -50,14 +50,8 @@ export async function uploadToFirebaseFromPath(
   contentType: string,
 ): Promise<string> {
   const file = bucket.file(destination);
-  await new Promise<void>((resolve, reject) => {
-    const readStream = fs.createReadStream(filePath);
-    const writeStream = file.createWriteStream({ contentType, public: true, resumable: true });
-    readStream.pipe(writeStream);
-    writeStream.on('finish', () => resolve());
-    writeStream.on('error', reject);
-    readStream.on('error', reject);
-  });
+  const buffer = fs.readFileSync(filePath);
+  await file.save(buffer, { contentType, public: true });
   return `https://storage.googleapis.com/${BUCKET_NAME}/${destination}`;
 }
 

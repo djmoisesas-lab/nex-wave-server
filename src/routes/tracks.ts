@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, optionalAuth } from '../middleware/auth';
 import { createNotification } from './notifications';
-import { uploadToFirebase, uploadToFirebaseFromPath, deleteFromFirebase, extractFirebasePath, isValidImage, bucket } from '../services/firebase';
+import { uploadToFirebase, deleteFromFirebase, extractFirebasePath, isValidImage, bucket } from '../services/firebase';
 
 const updateTrackSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -372,7 +372,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       const shortId = uuid().slice(0, 8);
       const firebaseDest = `audios/${user.username}-${shortId}${ext}`;
       try {
-        await uploadToFirebaseFromPath(tempPath, firebaseDest, detectedMime);
+        await uploadToFirebase(req.file.buffer, firebaseDest, detectedMime);
       } catch (fbErr) {
         fs.unlinkSync(tempPath);
         activeUploads--;
