@@ -395,7 +395,7 @@ router.post('/from-firebase', authMiddleware, async (req: Request, res: Response
       SELECT follower_id FROM follows WHERE following_id = ? AND notify_on_upload = 1
     `).all(req.user!.userId) as { follower_id: string }[];
     for (const f of followers) {
-      createNotification(f.follower_id, 'upload', `subió un nuevo set: "${title}"`, id, req.user!.userId);
+      await createNotification(f.follower_id, 'upload', `subió un nuevo set: "${title}"`, id, req.user!.userId);
     }
 
     res.status(201).json({ id, ...track });
@@ -506,7 +506,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
         SELECT follower_id FROM follows WHERE following_id = ? AND notify_on_upload = 1
       `).all(req.user!.userId) as { follower_id: string }[];
       for (const f of followers) {
-        createNotification(f.follower_id, 'upload', `subió un nuevo set: "${title}"`, id, req.user!.userId);
+        await createNotification(f.follower_id, 'upload', `subió un nuevo set: "${title}"`, id, req.user!.userId);
       }
 
       activeUploads--;
@@ -661,7 +661,7 @@ router.post('/:id/like', authMiddleware, async (req: Request, res: Response) => 
   const count = await db.query('SELECT COUNT(*) as count FROM likes WHERE track_id = ?').get(req.params.id) as any;
 
   if (track.user_id !== req.user!.userId) {
-    createNotification(
+    await createNotification(
       track.user_id,
       'like',
       `le gustó tu set "${track.title}"`,

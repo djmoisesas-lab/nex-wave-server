@@ -119,7 +119,7 @@ router.post('/follow/:id', authMiddleware, async (req: Request, res: Response) =
 
   await db.query('INSERT OR IGNORE INTO follows (follower_id, following_id) VALUES (?, ?)').run(req.user!.userId, targetId);
 
-  createNotification(targetId, 'follow', 'empezó a seguirte', '', req.user!.userId);
+  await createNotification(targetId, 'follow', 'empezó a seguirte', '', req.user!.userId);
 
   res.json({ followed: true });
 });

@@ -76,7 +76,7 @@ router.post('/:trackId/comments', authMiddleware, async (req: Request, res: Resp
     const mentioned = await db.query('SELECT id FROM users WHERE username = ?').get(match[1]) as any;
     if (mentioned && mentioned.id !== userId && !mentionedUsers.has(mentioned.id)) {
       mentionedUsers.add(mentioned.id);
-      createNotification(
+      await createNotification(
         mentioned.id,
         'mention',
         `te mencionó en "${track.title}"`,
@@ -89,7 +89,7 @@ router.post('/:trackId/comments', authMiddleware, async (req: Request, res: Resp
   if (parentId) {
     const parent = await db.query('SELECT user_id FROM comments WHERE id = ?').get(parentId) as any;
     if (parent && parent.user_id !== userId) {
-      createNotification(
+      await createNotification(
         parent.user_id,
         'comment',
         `respondió a tu comentario en "${track.title}"`,
@@ -98,7 +98,7 @@ router.post('/:trackId/comments', authMiddleware, async (req: Request, res: Resp
       );
     }
   } else if (track.user_id !== userId) {
-    createNotification(
+    await createNotification(
       track.user_id,
       'comment',
       `comentó en tu set "${track.title}"`,
@@ -151,7 +151,7 @@ router.post('/:trackId/comments/:commentId/like', authMiddleware, async (req: Re
   const count = await db.query('SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?').get(commentId) as any;
 
   if (comment.user_id !== userId) {
-    createNotification(
+    await createNotification(
       comment.user_id,
       'like',
       `le gustó tu comentario`,
