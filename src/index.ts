@@ -85,7 +85,7 @@ app.use((_req, res) => {
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({ error: err.message || 'Internal server error' });
+  res.status(500).json({ error: isProd ? 'Internal server error' : err.message });
 });
 
 app.listen(PORT, () => {
