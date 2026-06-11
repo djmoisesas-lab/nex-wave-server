@@ -132,9 +132,11 @@ function initSchema() {
       track_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       content TEXT NOT NULL,
+      parent_id TEXT,
       created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_id) REFERENCES comments(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS follows (
