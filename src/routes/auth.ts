@@ -24,7 +24,7 @@ const router = Router();
 router.post('/register', async (req: Request, res: Response) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.errors.map(e => e.message).join(', ') });
+    return res.status(400).json({ error: parsed.error.issues.map(e => e.message).join(', ') });
   }
   const { username, email, password, displayName } = parsed.data;
 

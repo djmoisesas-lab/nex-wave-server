@@ -150,7 +150,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     JOIN tracks t ON t.id = ph.track_id
     JOIN users u ON u.id = t.user_id
     WHERE ph.user_id = ? AND t.is_public = 1
-    GROUP BY t.id
+    GROUP BY t.id, t.title, t.artist, t.cover_url, t.plays, t.duration, u.username, u.display_name
     ORDER BY last_played DESC
     LIMIT 10
   `).all(req.params.id);
@@ -167,7 +167,7 @@ router.get('/:id/recent-plays', async (req: Request, res: Response) => {
     JOIN tracks t ON t.id = ph.track_id
     JOIN users u ON u.id = t.user_id
     WHERE ph.user_id = ? AND t.is_public = 1
-    GROUP BY t.id
+    GROUP BY t.id, t.title, t.artist, t.cover_url, t.plays, t.duration, u.username, u.display_name
     ORDER BY last_played DESC
     LIMIT 20
   `).all(req.params.id);

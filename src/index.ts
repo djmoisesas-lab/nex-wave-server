@@ -17,7 +17,7 @@ import notificationRoutes from './routes/notifications';
 import recommendationRoutes from './routes/recommendations';
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
