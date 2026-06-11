@@ -167,6 +167,12 @@ const coverUpload = multer({
   },
 });
 
+router.get('/list', async (_req: Request, res: Response) => {
+  const db = getDb();
+  const tracks = await db.query('SELECT id, user_id, title, artist, genre, bpm, musical_key, file_size, duration, plays, downloads, is_public, created_at FROM tracks ORDER BY created_at DESC LIMIT 50').all();
+  res.json(tracks);
+});
+
 router.get('/', optionalAuth, async (req: Request, res: Response) => {
   const db = getDb();
   const page = parseInt(req.query.page as string) || 1;
