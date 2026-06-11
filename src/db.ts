@@ -25,7 +25,7 @@ function prepare(sql: string, params: any[]): { text: string; values: any[] } {
       return `NOW() ${neg ? '-' : '+'} INTERVAL '${interval.replace(/^[+-]/, '')}'`;
     })
     .replace(/datetime\('now'\)/g, 'NOW()')
-    .replace(/INSERT OR IGNORE/g, 'INSERT ON CONFLICT DO NOTHING');
+    .replace(/INSERT OR IGNORE\s+INTO\s+(\S+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/g, 'INSERT INTO $1 ($2) VALUES ($3) ON CONFLICT DO NOTHING');
   return { text, values: params };
 }
 
@@ -138,6 +138,8 @@ function initSchema() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (parent_id) REFERENCES comments(id) ON DELETE CASCADE
     );
+
+    ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id TEXT;
 
     CREATE TABLE IF NOT EXISTS follows (
       follower_id TEXT NOT NULL,
