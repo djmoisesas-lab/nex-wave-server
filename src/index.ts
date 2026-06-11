@@ -71,17 +71,17 @@ app.get('/api/genres', async (_req, res) => {
   res.json(all);
 });
 
-if (isProd) {
+if (!process.env.RAILWAY_SERVICE_NAME) {
   const clientDist = path.resolve(__dirname, '..', '..', 'client', 'dist');
   app.use(express.static(clientDist));
   app.get('*', (_req, res) => {
     res.sendFile(path.join(clientDist, 'index.html'));
   });
-} else {
-  app.use((_req, res) => {
-    res.status(404).json({ error: 'Not found' });
-  });
 }
+
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err);
