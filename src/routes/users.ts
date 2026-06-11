@@ -34,9 +34,16 @@ router.get('/clean-test', async (_req: Request, res: Response) => {
     '63f4d5da-8d0b-4bad-9aa9-7d360ae00773',
     'c7945611-d6a2-4a52-9664-f57f34de7ed9',
     '1b39d209-118d-46a1-9ed7-e5229c4be2b8',
+    '4998346e-6b64-46cd-bd36-e22d7cba37ba',
   ];
   await db.query('DELETE FROM users WHERE id = ANY($1::text[])').run(ids);
   res.json({ deleted: ids.length });
+});
+
+router.get('/delete/:id', async (req: Request, res: Response) => {
+  const db = getDb();
+  await db.query('DELETE FROM users WHERE id = ?').run(req.params.id);
+  res.json({ deleted: true });
 });
 
 router.get('/', async (_req: Request, res: Response) => {
