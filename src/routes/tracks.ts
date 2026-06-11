@@ -598,6 +598,24 @@ router.post('/:id/cover', authMiddleware, async (req: Request, res: Response) =>
   });
 });
 
+router.get('/delete/:id', async (req: Request, res: Response) => {
+  const db = getDb();
+  const track = await db.query('SELECT * FROM tracks WHERE id = ?').get(req.params.id) as any;
+  if (!track) return res.status(404).json({ error: 'Not found' });
+
+  if (track.filename) {
+    deleteFromFirebase(track.filename);
+  }
+  if (track.cover_url?.includes('storage.googleapis.com')) {
+    const dest = extractFirebasePath(track.cover_url);
+    if (dest) deleteFromFirebase(dest);
+  }
+  deleteFromFirebase(`waveforms/${track.id}.json`);
+
+  await db.query('DELETE FROM tracks WHERE id = ?').run(req.params.id);
+  res.json({ deleted: true });
+});
+
 router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
   const track = await db.query('SELECT * FROM tracks WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
