@@ -55,6 +55,17 @@ export async function uploadToFirebaseFromPath(
   return `https://storage.googleapis.com/${BUCKET_NAME}/${destination}`;
 }
 
+export async function setupBucketCors(): Promise<void> {
+  const corsConfig = [{
+    origin: ['*'],
+    method: ['PUT', 'POST', 'GET'],
+    responseHeader: ['Content-Type', 'x-goog-*'],
+    maxAgeSeconds: 3600,
+  }];
+  await bucket.setCorsConfiguration(corsConfig);
+  console.log('Bucket CORS configured successfully');
+}
+
 export async function generateUploadUrl(destination: string, contentType: string): Promise<string> {
   const [url] = await bucket.file(destination).getSignedUrl({
     action: 'write',

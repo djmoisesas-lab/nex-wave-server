@@ -5,9 +5,18 @@ import { v4 as uuid } from 'uuid';
 import { getDb } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { createNotification } from './notifications';
-import { uploadToFirebase, isValidImage } from '../services/firebase';
+import { uploadToFirebase, isValidImage, setupBucketCors } from '../services/firebase';
 
 const router = Router();
+
+router.get('/setup-cors', async (_req: Request, res: Response) => {
+  try {
+    await setupBucketCors();
+    res.json({ success: true, message: 'CORS configured on Firebase bucket' });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.get('/list', async (_req: Request, res: Response) => {
   const db = getDb();
