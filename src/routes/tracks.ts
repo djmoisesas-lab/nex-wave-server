@@ -27,6 +27,7 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 const MAX_CONCURRENT_UPLOADS = 5;
 const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000;
 const TEMP_DIR = path.resolve(UPLOAD_DIR, 'temp');
+const MAX_FILE_SIZE = 400 * 1024 * 1024; // 400 MB
 
 let activeUploads = 0;
 
@@ -307,9 +308,12 @@ router.post('/:id/report', optionalAuth, async (req: Request, res: Response) => 
 });
 
 router.post('/init-upload', authMiddleware, async (req: Request, res: Response) => {
-  const { ext, contentType } = req.body;
+  const { ext, contentType, fileSize } = req.body;
   if (!ext || typeof ext !== 'string') {
     return res.status(400).json({ error: 'File extension required' });
+  }
+  if (fileSize && typeof fileSize === 'number' && fileSize > MAX_FILE_SIZE) {
+    return res.status(400).json({ error: `El archivo supera el límite de ${MAX_FILE_SIZE / 1024 / 1024} MB` });
   }
   const allowedExts = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a'];
   const extLower = ext.startsWith('.') ? ext.toLowerCase() : `.${ext.toLowerCase()}`;
@@ -348,6 +352,10 @@ router.post('/from-firebase', authMiddleware, async (req: Request, res: Response
     const fbFile = bucket.file(firebasePath);
     const [meta] = await fbFile.getMetadata();
     const fileSize = parseInt(meta.size, 10);
+    if (fileSize > MAX_FILE_SIZE) {
+      await fbFile.delete();
+      return res.status(400).json({ error: `El archivo supera el límite de ${MAX_FILE_SIZE / 1024 / 1024} MB` });
+    }
     const detectedMime = meta.contentType || 'audio/mpeg';
 
     // Download from Firebase to temp for processing
