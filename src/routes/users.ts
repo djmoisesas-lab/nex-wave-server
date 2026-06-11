@@ -9,6 +9,12 @@ import { uploadToFirebase, isValidImage } from '../services/firebase';
 
 const router = Router();
 
+router.get('/list', async (_req: Request, res: Response) => {
+  const db = getDb();
+  const users = await db.query('SELECT id, username, email, display_name, created_at FROM users ORDER BY created_at DESC LIMIT 50').all();
+  res.json(users);
+});
+
 router.get('/', async (_req: Request, res: Response) => {
   const db = getDb();
   const users = await db.query(
