@@ -24,6 +24,7 @@ router.get('/clean-test', async (_req: Request, res: Response) => {
     '1b959fd0-9031-45d7-b2eb-c4f6ec51a97f',
     '63f4d5da-8d0b-4bad-9aa9-7d360ae00773',
     'c7945611-d6a2-4a52-9664-f57f34de7ed9',
+    '1b39d209-118d-46a1-9ed7-e5229c4be2b8',
   ];
   await db.query('DELETE FROM users WHERE id = ANY($1::text[])').run(ids);
   res.json({ deleted: ids.length });
