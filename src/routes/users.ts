@@ -15,7 +15,7 @@ router.get('/list', async (_req: Request, res: Response) => {
   res.json(users);
 });
 
-router.post('/clean-test', async (_req: Request, res: Response) => {
+router.get('/clean-test', async (_req: Request, res: Response) => {
   const db = getDb();
   const ids = [
     '00fec39a-1e89-436b-9df8-8a9455c9665b',
