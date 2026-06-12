@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
-import path from 'path';
 
 const DATABASE_URL = process.env.DATABASE_URL;
+const IS_RAILWAY = !!process.env.RAILWAY_SERVICE_NAME;
 
 let pool: Pool;
 
@@ -10,8 +10,23 @@ function getPool(): Pool {
     if (!DATABASE_URL) {
       throw new Error('DATABASE_URL environment variable is required');
     }
-    pool = new Pool({ connectionString: DATABASE_URL, parseInt8: true });
-    initSchema();
+    // Railway uses sslmode=require but pg v8.x treats it as verify-full.
+    // Explicitly relax SSL validation to avoid connection failures.
+    const ssl = IS_RAILWAY || DATABASE_URL.includes('sslmode=')
+      ? { rejectUnauthorized: false }
+      : false;
+    pool = new Pool({
+      connectionString: DATABASE_URL,
+      parseInt8: true,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+      ssl,
+    });
+    // Run schema init in background, log errors without crashing
+    initSchema().catch((err) => {
+      console.error('Schema initialization error:', err);
+    });
   }
   return pool;
 }
@@ -54,8 +69,8 @@ export function getDb() {
   };
 }
 
-function initSchema() {
-  pool.query(`
+async function initSchema() {
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
@@ -236,7 +251,5 @@ function initSchema() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_reports_track ON reports(track_id);
-  `).catch((err) => {
-    console.error('Schema initialization error:', err);
-  });
+  `);
 }
