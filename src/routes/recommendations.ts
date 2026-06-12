@@ -17,7 +17,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
   const genres = userGenres.map(g => g.genre);
 
   if (genres.length === 0) {
-    const popularUsers = await db.query(`
+    let popularUsers = await db.query(`
       SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio,
         (SELECT COUNT(*) FROM tracks WHERE user_id = u.id) as track_count,
         (SELECT COUNT(*) FROM follows WHERE following_id = u.id) as followers_count
@@ -27,7 +27,18 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       LIMIT 4
     `).all(userId) as any[];
 
-    const popularTracks = await db.query(`
+    if (popularUsers.length === 0) {
+      popularUsers = await db.query(`
+        SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio,
+          (SELECT COUNT(*) FROM tracks WHERE user_id = u.id) as track_count,
+          (SELECT COUNT(*) FROM follows WHERE following_id = u.id) as followers_count
+        FROM users u
+        ORDER BY followers_count DESC
+        LIMIT 4
+      `).all() as any[];
+    }
+
+    let popularTracks = await db.query(`
       SELECT t.*, u.username, u.display_name,
         (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
         (SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0 as is_liked
@@ -39,12 +50,25 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       LIMIT 4
     `).all(userId, userId, userId) as any[];
 
+    if (popularTracks.length === 0) {
+      popularTracks = await db.query(`
+        SELECT t.*, u.username, u.display_name,
+          (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
+          (SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0 as is_liked
+        FROM tracks t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.is_public = 1
+        ORDER BY t.plays DESC
+        LIMIT 4
+      `).all(userId) as any[];
+    }
+
     return res.json({ users: popularUsers, tracks: popularTracks });
   }
 
   const placeholders = genres.map(() => '?').join(',');
 
-  const suggestedUsers = await db.query(`
+  let suggestedUsers = await db.query(`
     SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio,
       (SELECT COUNT(*) FROM tracks WHERE user_id = u.id) as track_count,
       (SELECT COUNT(*) FROM follows WHERE following_id = u.id) as followers_count,
@@ -57,7 +81,19 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     LIMIT 4
   `).all(...genres, userId, userId, ...genres) as any[];
 
-  const suggestedTracks = await db.query(`
+  if (suggestedUsers.length === 0) {
+    suggestedUsers = await db.query(`
+      SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio,
+        (SELECT COUNT(*) FROM tracks WHERE user_id = u.id) as track_count,
+        (SELECT COUNT(*) FROM follows WHERE following_id = u.id) as followers_count
+      FROM users u
+      WHERE u.id != ?
+      ORDER BY followers_count DESC
+      LIMIT 4
+    `).all(userId) as any[];
+  }
+
+  let suggestedTracks = await db.query(`
     SELECT t.*, u.username, u.display_name,
       (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
       (SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0 as is_liked
@@ -71,6 +107,19 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     ORDER BY t.plays DESC
     LIMIT 4
   `).all(userId, ...genres, userId, userId, userId) as any[];
+
+  if (suggestedTracks.length === 0) {
+    suggestedTracks = await db.query(`
+      SELECT t.*, u.username, u.display_name,
+        (SELECT COUNT(*) FROM likes WHERE track_id = t.id) as likes_count,
+        (SELECT COUNT(*) FROM likes WHERE track_id = t.id AND user_id = ?) > 0 as is_liked
+      FROM tracks t
+      JOIN users u ON u.id = t.user_id
+      WHERE t.is_public = 1 AND t.user_id != ?
+      ORDER BY t.plays DESC
+      LIMIT 4
+    `).all(userId, userId) as any[];
+  }
 
   res.json({ users: suggestedUsers, tracks: suggestedTracks });
 });
