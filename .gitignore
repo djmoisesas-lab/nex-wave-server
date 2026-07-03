@@ -8,5 +8,6 @@ waveforms/*
 *.db
 *.db-shm
 *.db-wal
+*.sql
 firebase-key.json
 package-lock.json
