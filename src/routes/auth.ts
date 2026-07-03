@@ -172,4 +172,41 @@ router.post('/reset-password', async (req: Request, res: Response) => {
   res.json({ message: 'Contraseña actualizada correctamente' });
 });
 
+router.post('/change-password', async (req: Request, res: Response) => {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+
+  let userId: string;
+  try {
+    const decoded = jwt.verify(header.slice(7), getJwtSecret()) as AuthPayload;
+    userId = decoded.userId;
+  } catch {
+    return res.status(401).json({ error: 'Token inválido' });
+  }
+
+  const parsed = z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(6).max(128),
+  }).safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Contraseña nueva debe tener al menos 6 caracteres' });
+  }
+
+  const { currentPassword, newPassword } = parsed.data;
+  const db = getDb();
+  const user = await db.query('SELECT password FROM users WHERE id = ?').get(userId) as any;
+
+  if (!user || !bcrypt.compareSync(currentPassword, user.password)) {
+    return res.status(400).json({ error: 'La contraseña actual no es correcta' });
+  }
+
+  const hashed = bcrypt.hashSync(newPassword, 10);
+  await db.query('UPDATE users SET password = ? WHERE id = ?').run(hashed, userId);
+
+  res.json({ message: 'Contraseña actualizada correctamente' });
+});
+
 export default router;
